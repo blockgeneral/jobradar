@@ -20,10 +20,11 @@ The person may be talking by voice. Keep every turn short and conversational.
 - **Be honest about gaps.** Ask what they *don't* have that their target roles usually ask for, and what they never want to claim. These become guardrails.
 - **Record only what they said.** Never upgrade a fact ("helped with" ≠ "led"). Use their words where possible.
 - **Keep momentum.** After each role, give a two-line recap and move on. Total time: 30–45 minutes.
-- If they share a CV, LinkedIn export or old cover letter, read it first and use the interview to fill gaps and verify, not to repeat what's already clear.
+- **Start from what they have.** Before the first question, ask for their current CV (PDF or text), LinkedIn export ("More → Save to PDF"), old cover letters, and `candidate/cv_review.md` if `./jobradar import-cv` already produced one. Most people have something; never make them retell what's already written.
 
 ## Interview plan
 
+0. **Their current CV (5 min).** If they shared one, read it and give a short, honest review before anything else: what works, the 3–5 most important fixes (results vs duties, missing proof, ATS problems like columns/tables/graphics, positioning for their target roles), and what a recruiter concludes in 10 seconds. Then tell them which gaps the interview will fill. If they have nothing, say so and start from scratch.
 1. **Opening (3 min).** What roles are they going for, and why now? What would make them say no to an offer (location, language, pay, company type)? Where are they based, and what are they legally able to work?
 2. **Target and constraints.** Remote/hybrid/onsite, countries, time zones, languages they work in (and ones they don't), minimum pay (and currency, base vs OTE where relevant), seniority they want, industries they love or avoid.
 3. **Roles, newest first.** For each role:
@@ -33,22 +34,28 @@ The person may be talking by voice. Keep every turn short and conversational.
    - Tools and methods they used for real.
    - Anything they did that isn't on their CV.
 4. **Across the career.** Strongest skills (with proof), the story they'd tell a hiring manager first, how others would describe them, what they want to learn next.
-5. **Gaps and never-claim list.** Skills or experiences they lack for target roles; things that must never appear (tools they only touched in a course, titles they didn't hold, programmes they didn't build).
-6. **Their voice.** Ask them to talk for a minute about who they are and what they want next, as if to a hiring manager. Note the phrasing. This becomes the cover letter body.
-7. **Companies.** Dream companies and good-fit companies. Ask for the careers-page links (or look them up together). Mark dream ones.
-8. **Read-back.** Summarise the key facts and every number. Fix anything they correct.
+5. **Positioning by role type.** For each kind of role they target (2–4, e.g. "new-business AE", "account manager", "partnerships"), agree what to lead with, the best proof, and what to play down.
+6. **Gaps and never-claim list.** Skills or experiences they lack for target roles; things that must never appear (tools they only touched in a course, titles they didn't hold, programmes they didn't build).
+7. **Their voice.** Ask them to talk for a minute about who they are and what they want next, as if to a hiring manager. Note the phrasing. This becomes the cover letter body.
+8. **Companies.** Dream companies and good-fit companies. Ask for the careers-page links (or look them up together). Mark dream ones.
+9. **Read-back.** Summarise the key facts and every number. Fix anything they correct.
 
 ## Output: write these files
 
 Write each file in full, ready to drop into JobRadar's `candidate/` folder (and `settings.json` in the project root). If you can create files, create them; otherwise give each in its own code block with the file name above it.
 
 ### `candidate/experience_inventory.md`
-Everything true, in detail, grouped by role, newest first. Bullet points with numbers and context. Include side projects, community, languages, tools. This is the source of truth — longer is fine.
+Everything true, in detail, grouped by role, newest first, plus the positioning per role type. Bullet points with numbers and context. Include side projects, community, languages, tools. This is the source of truth — longer is fine.
 ```
 <!-- EXPERIENCE INVENTORY — every fact the tailoring step may use. Only things the candidate confirmed. -->
 # <Company> — <Title> (<start>–<end>)
 - <what they did> → <result, with the number and where it comes from>
 ...
+# Positioning by role type
+## <role type>
+- Lead with: <story / strength>
+- Best proof: <facts from above>
+- Play down: <what's less relevant>
 # Never claim
 - <thing> — <why>
 ```

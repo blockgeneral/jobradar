@@ -48,7 +48,7 @@ async function runNode(code, { input = [], nodes = {}, env = {}, state = {} }) {
     j = L.normalize({ source: 'jobicy' }, JSON.stringify({ jobs: [{ id: 5, url: 'u', jobTitle: 'Account Manager &amp; Partnerships', companyName: 'Y', pubDate: '2026-11-21 08:00:20' }] }));
     assert.equal(j[0].title, 'Account Manager & Partnerships'); assert.equal(j[0].postedAt, '2026-11-21T08:00:20.000Z');
   });
-  const settings = JSON.parse(fs.readFileSync(path.join(ROOT, 'settings.example.json'), 'utf8'));
+  const settings = JSON.parse(fs.readFileSync(path.join(ROOT, 'examples/settings.json'), 'utf8'));
   t('requests: MCP is POST, boards GET, Hiring Cafe only on its interval', () => {
     const s2 = JSON.parse(JSON.stringify(settings)); s2.hiringCafe = { enabled: true, via: 'mcp', queries: ['a', 'b'], everyMinutes: 60 };
     const atTop = new Date('2026-11-21T10:05:00Z').getTime(), mid = new Date('2026-11-21T10:35:00Z').getTime();
@@ -70,7 +70,7 @@ async function runNode(code, { input = [], nodes = {}, env = {}, state = {} }) {
   });
   const base = fs.readFileSync(path.join(ROOT, 'examples/candidate/resume_base.md'), 'utf8');
   const inventory = fs.readFileSync(path.join(ROOT, 'examples/candidate/experience_inventory.md'), 'utf8');
-  const exNever = JSON.parse(fs.readFileSync(path.join(ROOT, 'settings.example.json'), 'utf8')).guardrails.neverClaim;
+  const exNever = JSON.parse(fs.readFileSync(path.join(ROOT, 'examples/settings.json'), 'utf8')).guardrails.neverClaim;
   const clean = base.replace(/<!--[\s\S]*?-->/g, '');
   t('guardrails catch invented numbers, never-claim items, dropped sections; inventory facts allowed', () => {
     assert.deepEqual(L.checkTailoring(base, clean, 'Dear X', { forbidden: exNever, inventory, coverSlotsText: '' }), []);

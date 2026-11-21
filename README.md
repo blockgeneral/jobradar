@@ -40,15 +40,15 @@ cd jobradar
 ./jobradar setup
 ```
 
-The setup asks for your key, connects Telegram or email (it finds your Telegram chat by itself and tests everything), builds the containers, takes your list of companies, and runs a first search. **Within a few minutes you get your 3 best matches from the last 7 days**, so you can see it working straight away. After that, new matches arrive within ~15 minutes of being posted.
+The setup asks for your key, connects Telegram or email (it finds your Telegram chat by itself and tests everything), **imports your current CV** (PDF or LinkedIn export — you get an honest review and your starting files in about a minute), takes your list of companies, and runs a first search. **Within a few minutes you get your 3 best matches from the last 7 days**, so you can see it working straight away. After that, new matches arrive within ~15 minutes of being posted.
 
 ## Step 2: the interview (do this once, it's what makes it good)
 
-JobRadar can only be as good as what it knows about you. The [onboarding interview](onboarding/README.md) is a 30-minute conversation with Claude, like an intake call with a recruiter: one question at a time, follow-ups on the details, and an honest list of what you should never claim. Voice works. It writes four files into `candidate/`:
+The CV import gets you started; the interview makes it yours. JobRadar can only be as good as what it knows about you. The [onboarding interview](onboarding/README.md) is a 30-minute conversation with Claude, like an intake call with a recruiter: one question at a time, follow-ups on the details, and an honest list of what you should never claim. Voice works. It writes four files into `candidate/`:
 
 | File | What it is |
 |---|---|
-| `experience_inventory.md` | Everything true about your work, in detail. The tailoring step may use any fact here — and nothing else. |
+| `experience_inventory.md` | Everything true about your work, in detail, plus what to lead with for each type of role you target. The tailoring step may use any fact here — and nothing else. |
 | `resume_base.md` | Your master resume. |
 | `cover_letter_base.md` | Your letter in your voice. Only three slots change per job; the rest stays word for word. |
 | `search_profile.md` | Your must-haves (where you can work, languages, minimum pay) and preferences. |
@@ -106,6 +106,7 @@ Changes apply on the next run. Keys and channels live in `.env` (`./jobradar set
 ./jobradar setup        first-time setup (safe to re-run to change anything)
 ./jobradar run          check the job boards right now
 ./jobradar companies    add companies (paste career-page links)
+./jobradar import-cv    import a CV (PDF) → honest review + your candidate files
 ./jobradar rerender X   rebuild the Word/PDF files after editing output/X/*.md
 ./jobradar report       send the weekly report now (or: report monthly)
 ./jobradar status       what's running, which companies, latest jobs
@@ -135,7 +136,8 @@ Everything runs on your machine. Your files, tracker and keys never leave it, ex
 
 - Workflow logic lives in `src/` (`lib/` shared helpers, `wf/` one block per n8n Code node) and is compiled into `workflows/*.json` by `node build/build.js`.
 - `node test/unit.js` — adapters, filters, guardrails, notifications, email/reply/digest logic.
-- `N8N_BIN=/path/to/n8n bash test/e2e.sh` — boots a real n8n, imports all workflows, runs search → notify → button presses → weekly report against mock boards, Claude, Telegram and SMTP; the renderer makes real Word files. `E2E_CANDIDATE=examples/candidate E2E_SETTINGS=$PWD/settings.example.json E2E_EXPECT=1` runs the same as a fictional backend engineer.
+- `N8N_BIN=/path/to/n8n bash test/e2e.sh` — boots a real n8n, imports all workflows, runs search → notify → button presses → weekly report against mock boards, Claude, Telegram and SMTP; the renderer makes real Word files. `E2E_CANDIDATE=examples/candidate E2E_SETTINGS=$PWD/examples/settings.json E2E_EXPECT=1` runs the same as a fictional backend engineer.
+- `N8N_BIN=/path/to/n8n bash test/setup-wizard.sh` — runs the real `./jobradar setup` as a brand-new user from a clean checkout (bad key, Telegram, CV import, company links, first-run preview), with `test/fake-docker` standing in for containers.
 - Architecture notes: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## License

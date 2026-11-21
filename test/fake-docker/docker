@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Test double for `docker` so test/setup-wizard.sh can drive ./jobradar end to end without containers.
+# Maps `docker compose run … n8n …` to a local n8n/node and `up -d` to local processes. Not for real use.
+set -uo pipefail
+P="$PWD"                                     # project dir (./jobradar cd's into it)
+S="${FAKE_DOCKER_STATE:?}"                   # scratch dir
+N8N="${FAKE_N8N_BIN:?}"
+log() { echo "[fake-docker] $*" >> "$S/docker.log"; }
+log "$*"
+loadenv() {
+  set -a; [ -f "$P/.env" ] && . "$P/.env"; set +a
+  export N8N_USER_FOLDER="$S/n8n" N8N_BLOCK_ENV_ACCESS_IN_NODE=false N8N_RESTRICT_FILE_ACCESS_TO="$P" JOBRADAR_DIR="$P" \
+    RENDERER_URL=http://127.0.0.1:3102 GENERIC_TIMEZONE="${TIMEZONE:-UTC}" N8N_DIAGNOSTICS_ENABLED=false N8N_LOG_LEVEL=error \
+    N8N_PORT=5698 N8N_LISTEN_ADDRESS=127.0.0.1 N8N_RUNNERS_BROKER_PORT=5697 \
+    ANTHROPIC_BASE_URL="$FAKE_API" TELEGRAM_API_BASE="$FAKE_API" JOBRADAR_MOCK_BASE="$FAKE_API"
+}
+map() { local a="$1"; a="${a//\/home\/node\/jobradar/$P}"; a="${a//\/w\//$P/}"; [ "$a" = /w ] && a="$P"; printf "%s" "$a"; }
+case "${1:-}" in
+  info) exit 0;;
+  compose) shift;;
+  *) exit 0;;
+esac
+case "${1:-}" in
+  version|pull|build|ps|logs) exit 0;;
+  stop) for p in $(cat "$S"/pids 2>/dev/null); do kill "$p" 2>/dev/null; done; rm -f "$S/pids"; sleep 1; exit 0;;
+  up)
+    loadenv
+    for p in $(cat "$S"/pids 2>/dev/null); do kill "$p" 2>/dev/null; done; sleep 1
+    PORT=3102 OUTPUT_DIR="$P/output" GOTENBERG_URL="$FAKE_API" node "$P/renderer/server.js" >> "$S/renderer.log" 2>&1 & echo $! >> "$S/pids"
+    "$N8N" start >> "$S/n8n.log" 2>&1 & echo $! >> "$S/pids"
+    exit 0;;
+  exec) shift; [ "$1" = -T ] && shift; svc="$1"; shift; loadenv; if [ "$svc" = renderer ]; then (cd "$P/renderer" && OUTPUT_DIR="$P/output" GOTENBERG_URL="$FAKE_API" "$@"); fi; exit $?;;
+  run)
+    shift; ep=""; args=()
+    while [ $# -gt 0 ]; do
+      case "$1" in --rm|--no-deps|-T) shift;; -v) shift 2;; --entrypoint) ep="$2"; shift 2;; n8n|renderer) shift; break;; *) shift;; esac
+    done
+    loadenv
+    for a in "$@"; do args+=("$(map "$a")"); done
+    case "$ep" in
+      node) exec node "${args[@]}";;
+      sh) cmd="${args[1]}"; cmd="${cmd//\/tmp\/c.json/$S/c.json}"; cmd="${cmd//n8n import/$N8N import}"; exec sh -c "$cmd";;
+      *) exec "$N8N" "${args[@]}";;
+    esac;;
+esac
+exit 0

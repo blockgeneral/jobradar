@@ -15,7 +15,8 @@ yes()  { local v; read -r -p "  $1 [${2:-y}/$( [ "${2:-y}" = y ] && echo n || ec
 
 WF_SEND=JobRadarSend0001; WF_RADAR=JobRadarMain0001; WF_BUTTONS=JobRadarActn0001
 WF_MAIL=JobRadarMail0001; WF_REPLIES=JobRadarRepl0001; WF_REPORTS=JobRadarRprt0001
-HOOK=http://127.0.0.1:5678/webhook
+HOOK="${JOBRADAR_HOOK:-http://127.0.0.1:5678/webhook}"
+API_ANTHROPIC="${ANTHROPIC_BASE_URL:-https://api.anthropic.com}"; API_TG="${TELEGRAM_API_BASE:-https://api.telegram.org}"
 
 env_get() { [ -f .env ] && grep -E "^$1=" .env | tail -1 | cut -d= -f2- || true; }
 env_set() { # env_set KEY VALUE  (creates .env from template if needed)
@@ -47,9 +48,9 @@ wait_up() {
 
 deploy_workflows() {
   say "${B}Installing the workflows…${N}"
-  ( umask 077; node_in /home/node/jobradar/tools/credentials.js > .credentials.tmp.json )
-  dc run --rm --no-deps -T n8n import:credentials --input=/home/node/jobradar/.credentials.tmp.json >/dev/null 2>&1 || { rm -f .credentials.tmp.json; die "Couldn't save the email credentials into n8n."; }
-  rm -f .credentials.tmp.json
+  # credentials are generated and imported inside one container run — no secrets file on disk
+  dc run --rm --no-deps -T --entrypoint sh n8n -c 'node /home/node/jobradar/tools/credentials.js > /tmp/c.json && n8n import:credentials --input=/tmp/c.json' >/dev/null 2>&1 \
+    || die "Couldn't save the email settings into n8n. Run ./jobradar logs for details."
   local ids="$WF_SEND $WF_RADAR $WF_REPORTS"
   has_channel telegram && ids="$ids $WF_BUTTONS"
   has_channel email && ids="$ids $WF_MAIL"
@@ -66,7 +67,7 @@ setup_claude() {
   local k cur; cur="$(env_get ANTHROPIC_API_KEY)"
   while :; do
     if [ -n "$cur" ] && yes "Keep the key already saved (…${cur: -4})?"; then k="$cur"; else k="$(asks 'Paste your key (sk-ant-…)')"; fi
-    code=$(curl -s -o /dev/null -w "%{http_code}" https://api.anthropic.com/v1/models -H "x-api-key: $k" -H "anthropic-version: 2023-06-01" || true)
+    code=$(curl -s -o /dev/null -w "%{http_code}" "$API_ANTHROPIC/v1/models" -H "x-api-key: $k" -H "anthropic-version: 2023-06-01" || true)
     if [ "$code" = 200 ]; then ok "key works"; env_set ANTHROPIC_API_KEY "$k"; break; fi
     warn "That key didn't work (HTTP $code). Try again."; cur=""
   done
@@ -77,7 +78,7 @@ setup_telegram() {
   local t cur me name chat i; cur="$(env_get TELEGRAM_BOT_TOKEN)"
   while :; do
     if [ -n "$cur" ] && yes "Keep the bot already saved?"; then t="$cur"; else t="$(asks 'Paste the bot token')"; fi
-    me="$(curl -s "https://api.telegram.org/bot$t/getMe" || true)"
+    me="$(curl -s "$API_TG/bot$t/getMe" || true)"
     name="$(printf "%s" "$me" | sed -n 's/.*"username":"\([^"]*\)".*/\1/p')"
     [ -n "$name" ] && { ok "bot @$name found"; env_set TELEGRAM_BOT_TOKEN "$t"; break; }
     warn "Telegram didn't accept that token."; cur=""
@@ -86,13 +87,13 @@ setup_telegram() {
   if [ -z "$chat" ] || ! yes "Keep chat id $chat?"; then
     say "  Now open ${B}t.me/$name${N} and press Start (or send it any message). Waiting…"
     for i in $(seq 1 60); do
-      chat="$(curl -s "https://api.telegram.org/bot$t/getUpdates" | grep -o '"chat":{"id":-\{0,1\}[0-9]*' | tail -1 | grep -o -- '-\{0,1\}[0-9]*$' || true)"
+      chat="$(curl -s "$API_TG/bot$t/getUpdates" | grep -o '"chat":{"id":-\{0,1\}[0-9]*' | tail -1 | grep -o -- '-\{0,1\}[0-9]*$' || true)"
       [ -n "$chat" ] && break; sleep 2
     done
     [ -n "$chat" ] || die "No message arrived. Send your bot a message and run ./jobradar setup again."
     env_set TELEGRAM_CHAT_ID "$chat"; ok "found your chat ($chat)"
   fi
-  curl -s -o /dev/null "https://api.telegram.org/bot$t/sendMessage" --data-urlencode "chat_id=$chat" --data-urlencode "text=👋 JobRadar is connected. Job matches will arrive here." && ok "test message sent — check Telegram"
+  curl -s -o /dev/null "$API_TG/bot$t/sendMessage" --data-urlencode "chat_id=$chat" --data-urlencode "text=👋 JobRadar is connected. Job matches will arrive here." && ok "test message sent — check Telegram"
 }
 
 setup_email() {
@@ -144,16 +145,52 @@ XML
   read -r -p "  Press Enter when done (or now, and do it later)… " _
 }
 
+clean_path() { # Mac Terminal drag-and-drop gives "path\ with\ spaces" or 'quoted path'
+  local p="$1"; p="${p%"${p##*[![:space:]]}"}"; p="${p#\'}"; p="${p%\'}"; p="${p#\"}"; p="${p%\"}"; printf "%s" "${p//\\ / }"
+}
+
+import_cv() {
+  say ""; say "  ${B}Import your CV${N}  ${D}PDF works best — Word: File → Save as PDF · LinkedIn: your profile → More → Save to PDF${N}"
+  local f name targets loc pay
+  f="$(clean_path "$(ask 'Drag the file into this window (or type its path), then press Enter')")"
+  [ -f "$f" ] || { warn "Can't find that file."; return 1; }
+  case "$f" in *.pdf|*.PDF|*.md|*.txt) ;; *) warn "Please export it as PDF first."; return 1;; esac
+  targets="$(ask 'Which roles are you going for? (e.g. Account Executive, Partnerships Manager)')"
+  loc="$(ask 'Where are you based, and where can you work? (e.g. Vienna; remote EU or hybrid Vienna)')"
+  pay="$(ask 'Minimum pay, if you have one (e.g. 100k EUR OTE) — Enter to skip')"
+  mkdir -p candidate/import; name="$(basename "$f")"; cp "$f" "candidate/import/$name"
+  say "  Reading your CV with Claude (about a minute)…"
+  if dc run --rm --no-deps -T -v "$PWD:/w" --entrypoint node n8n /w/tools/import-cv.js "/w/candidate/import/$name" "$targets" "$loc" "$pay" --write /w > candidate/.review.tmp 2> candidate/.import.err; then
+    say ""; say "${B}── Your CV review ───────────────────────────────${N}"; cat candidate/.review.tmp; say "${B}────────────────────────────────────────────────${N}"
+    rm -f candidate/.review.tmp candidate/.import.err
+    ok "wrote candidate/resume_base.md, cover_letter_base.md, experience_inventory.md, search_profile.md (+ cv_review.md)"
+    ok "set job-title filters in settings.json from your target roles"
+    say "  ${D}Open candidate/search_profile.md and fill in any TODO lines. Then do the interview (onboarding/README.md) — it starts from this CV and fills the gaps above.${N}"
+  else
+    warn "Import failed: $(tail -2 candidate/.import.err)"; rm -f candidate/.review.tmp candidate/.import.err; return 1
+  fi
+}
+
 setup_candidate() {
   say ""; say "${B}3 · Your profile${N}"
-  local need=0 f
+  local need=0 f c
   for f in resume_base.md cover_letter_base.md search_profile.md; do [ -f "candidate/$f" ] || need=1; done
-  if [ $need = 0 ]; then ok "candidate/ files found"; [ -f candidate/experience_inventory.md ] || warn "no candidate/experience_inventory.md yet — tailoring works, but the interview makes it much better (see onboarding/README.md)"; return; fi
-  say "  JobRadar needs your resume, cover letter and search profile in ${B}candidate/${N}."
-  say "  The easiest way: the 30-minute interview in ${B}onboarding/README.md${N} (works in the Claude app, voice is fine). It writes all four files."
-  if yes "Use the example profile (a fictional engineer) for now, so you can see it work?" n; then
-    mkdir -p candidate; cp -n examples/candidate/*.md candidate/; ok "example files copied into candidate/ — replace them after the interview"
-  else die "Do the interview, put the files in candidate/, then run ./jobradar setup again."; fi
+  if [ $need = 0 ]; then
+    ok "candidate/ files found"
+    [ -f candidate/experience_inventory.md ] || warn "no candidate/experience_inventory.md yet — the interview (onboarding/README.md) makes tailoring much better"
+    if yes "Import a new CV version? (your current files are kept as .bak)" n; then import_cv || true; fi
+    return
+  fi
+  say "  JobRadar tailors every application from your own material. How do you want to start?"
+  say "   1) Import my CV — 2 minutes, includes an honest review ${D}(recommended)${N}"
+  say "   2) I'll do the 30-minute interview first (onboarding/README.md), then come back"
+  say "   3) Try it with the example profile (a fictional engineer)"
+  c="$(ask 'Choose' 1)"
+  case "$c" in
+    2) die "Run the interview (onboarding/README.md), put the files in candidate/, then ./jobradar setup again.";;
+    3) mkdir -p candidate; cp -n examples/candidate/*.md candidate/; [ -f settings.json ] || cp examples/settings.json settings.json; ok "example profile copied into candidate/ (and its settings)";;
+    *) [ -f settings.json ] || cp settings.example.json settings.json; until import_cv; do yes "Try again?" || die "Put your files in candidate/ and run ./jobradar setup again."; done;;
+  esac
 }
 
 setup_companies() {
@@ -218,12 +255,14 @@ cmd_update()   {
 }
 cmd_rerender() { need_docker; [ $# -ge 1 ] || { say "usage: ./jobradar rerender <job folder in output/>"; ls -1t output | head -10 | sed 's/^/  /'; exit 1; }; dc exec -T renderer node rerender.js "$(basename "$1")"; }
 cmd_companies(){ need_docker; setup_companies; say "Applies on the next run."; }
+cmd_import()   { need_docker; [ -f settings.json ] || cp settings.example.json settings.json; import_cv; }
 cmd_help() { cat <<EOF
 ${B}JobRadar${N} — finds jobs minutes after they're posted, tailors your files, notifies you. You apply.
 
   ./jobradar setup        first-time setup (safe to re-run to change anything)
   ./jobradar run          check the job boards right now
   ./jobradar companies    add companies to watch (paste career-page links)
+  ./jobradar import-cv    import a CV (PDF) → review + your candidate files
   ./jobradar rerender X   rebuild the Word/PDF files after editing output/X/*.md
   ./jobradar report       send the weekly report now (or: report monthly)
   ./jobradar status       what's running, which companies, latest jobs
@@ -236,6 +275,6 @@ EOF
 
 case "${1:-help}" in
   setup) cmd_setup;; run) cmd_run;; report) shift; cmd_report "$@";; start) cmd_start;; stop) cmd_stop;; restart) cmd_restart;;
-  logs) shift; cmd_logs "$@";; status) cmd_status;; update) cmd_update;; rerender) shift; cmd_rerender "$@";; companies) cmd_companies;;
+  logs) shift; cmd_logs "$@";; status) cmd_status;; update) cmd_update;; rerender) shift; cmd_rerender "$@";; companies) cmd_companies;; import-cv) cmd_import;;
   *) cmd_help;;
 esac

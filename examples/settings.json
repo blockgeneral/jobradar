@@ -1,0 +1,133 @@
+{
+  "_readme": "Example settings for the fictional engineer in examples/candidate. Your own settings.json is created from settings.example.json by ./jobradar setup.",
+  "companies": [
+    {
+      "url": "https://jobs.ashbyhq.com/supabase",
+      "dream": true
+    },
+    {
+      "url": "https://jobs.ashbyhq.com/posthog",
+      "name": "PostHog",
+      "dream": true
+    },
+    {
+      "url": "https://jobs.ashbyhq.com/n8n",
+      "name": "n8n"
+    },
+    {
+      "url": "https://job-boards.greenhouse.io/vercel"
+    }
+  ],
+  "boards": {
+    "weworkremotely": "remote-back-end-programming-jobs",
+    "remotive": "software-dev",
+    "remoteok": "backend",
+    "jobicy": true,
+    "himalayas": true
+  },
+  "boardQueries": [
+    "backend engineer",
+    "platform engineer"
+  ],
+  "hiringCafe": {
+    "enabled": true,
+    "via": "mcp",
+    "mcpUrl": "https://hiringcafe-mcp.vercel.app/api/mcp",
+    "queries": [
+      "backend engineer"
+    ],
+    "location": "Europe",
+    "everyMinutes": 60,
+    "apifyTaskId": ""
+  },
+  "filters": {
+    "freshHours": 72,
+    "titleInclude": [
+      "backend",
+      "back-end",
+      "platform engineer",
+      "software engineer",
+      "\\bSWE\\b",
+      "infrastructure engineer"
+    ],
+    "titleIncludeDream": [
+      "developer advocate",
+      "solutions engineer"
+    ],
+    "titleExclude": [
+      "intern\\b",
+      "junior",
+      "staff",
+      "principal",
+      "manager",
+      "director",
+      "\\bVP\\b",
+      "frontend",
+      "front-end",
+      "mobile",
+      "\\bios\\b",
+      "android",
+      "data scientist",
+      "(german|french|dutch|japanese)[- ]speaking"
+    ],
+    "titleExcludeDream": [
+      "intern\\b",
+      "junior",
+      "director",
+      "\\bVP\\b"
+    ],
+    "languageExclude": [
+      "fluent (in )?(german|french|dutch|portuguese)",
+      "native (german|french|dutch)",
+      "(c1|c2) (german|french|dutch)"
+    ],
+    "locationExclude": []
+  },
+  "scoring": {
+    "threshold": 70,
+    "dreamThreshold": 60,
+    "maxScoredPerRun": 40,
+    "maxTailoredPerRun": 4
+  },
+  "preview": {
+    "days": 7,
+    "count": 3
+  },
+  "notifications": {
+    "delivery": "instant",
+    "digestTime": "08:00",
+    "style": "compact",
+    "files": [
+      "docx"
+    ],
+    "minScore": 0,
+    "quietHours": {
+      "from": "22:30",
+      "to": "07:30"
+    },
+    "buttons": {
+      "linkedinSearch": true,
+      "copyOutreachNote": true,
+      "statusButtons": true
+    }
+  },
+  "reports": {
+    "weekly": true,
+    "weeklyDay": "monday",
+    "time": "08:30",
+    "monthly": true,
+    "checkInAfterDays": 5,
+    "ghostedAfterDays": 21
+  },
+  "replyDetection": {
+    "enabled": false
+  },
+  "guardrails": {
+    "neverClaim": [
+      {
+        "pattern": "kubernetes",
+        "message": "Mentions Kubernetes — you've only used it in a course"
+      }
+    ]
+  }
+}

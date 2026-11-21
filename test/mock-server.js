@@ -103,7 +103,16 @@ http.createServer(async (req, res) => {
     if (u.pathname === '/v1/messages') {
       const j = JSON.parse(body.toString());
       if (req.headers['x-api-key'] !== 'test-key') return send(401, { type: 'error', error: { type: 'authentication_error', message: 'bad key' } });
-      const tool = j.tools[0].name; const user = j.messages[0].content;
+      const tool = j.tools[0].name;
+      if (tool === 'candidate_files') {
+        const doc = j.messages[0].content.find((c) => c.type === 'document');
+        log('anthropic', { tool, hasPdf: !!(doc && Buffer.from(doc.source.data, 'base64').slice(0, 4).toString() === '%PDF'), prompt: j.messages[0].content.slice(-1)[0].text.slice(0, 200) });
+        return send(200, { content: [{ type: 'tool_use', id: 't', name: tool, input: {
+          review_md: '**What works:** clear results.\n**Fix first:** 1) …', experience_inventory_md: '<!-- EXPERIENCE INVENTORY -->\n# Rotaflow\n- checkout rewrite\n# Positioning by role type\n## Backend\n- Lead with: checkout rewrite',
+          resume_md: baseResume, cover_letter_md: 'Dear {{HIRING_TEAM}},\n\nStory.\n\n{{WHY_COMPANY}}\n\n{{LOCATION_LINE}}\n\n<!-- options:\n- Remote: "Remote is fine." -->',
+          search_profile_md: '# Who I am\nTODO', title_include: ['backend'], title_exclude: ['junior'], board_queries: ['backend engineer'], wwr_category: 'remote-back-end-programming-jobs', remotive_category: 'software-dev', remoteok_tag: 'backend', language_exclude: ['fluent (in )?german'] } }] });
+      }
+      const user = j.messages[0].content;
       log('anthropic', { tool, company: (user.match(/Company: (.*)/) || [])[1], model: j.model, chars: user.length, hasInventory: /<experience_inventory>/.test(user) });
       const input = tool === 'job_fit' ? mockScore(user) : tool === 'classify' ? { jr_id: (user.match(/(JR-[A-Z0-9]{6})/) || [])[1] || 'none', outcome: 'intro', summary: 'n8n invites you to a 30-minute intro call' } : mockTailor(user);
       return send(200, { id: 'msg_x', type: 'message', role: 'assistant', model: j.model, content: [{ type: 'tool_use', id: 'tu_1', name: tool, input }], stop_reason: 'tool_use' });
@@ -122,10 +131,13 @@ http.createServer(async (req, res) => {
       }
       return send(200, { ok: true, result: { message_id: 1 } });
     }
+    if (u.pathname === '/v1/models') return req.headers['x-api-key'] === 'test-key' ? send(200, { data: [] }) : send(401, { error: { message: 'bad key' } });
+    if (/\/bot[^/]+\/getMe$/.test(u.pathname)) return send(200, { ok: true, result: { id: 1, is_bot: true, username: 'jobradar_test_bot' } });
     if (u.pathname === '/_ctl/updates') { TG_UPDATES = TG_UPDATES.concat(JSON.parse(body.toString())); return send(200, { ok: true }); }
     if (/\/bot[^/]+\/getUpdates$/.test(u.pathname)) {
       const off = Number(u.searchParams.get('offset') || 0);
       const res = TG_UPDATES.filter((x) => x.update_id >= off);
+      if (!TG_UPDATES.length && !u.searchParams.get('allowed_updates')) res.push({ update_id: 1, message: { message_id: 1, chat: { id: 42, type: 'private' }, text: '/start' } });
       log('telegram_getupdates', { offset: off, n: res.length });
       return send(200, { ok: true, result: res });
     }
