@@ -60,7 +60,7 @@ function mockTailor(user) {
   if (/Anthropic/.test(c)) resume = resume.replace(/\b\d+%/, '95%'); // planted lie → guard must catch it
   return {
     resume_md: resume, hiring_team: `${c} Hiring Team`,
-    why_company: `I've sold a data product to the same technical buyers ${c} serves, and the motion you describe — discovery-led, annual contracts, Solutions Engineers in the room — is the one I rebuilt at Coupler.io this year.`,
+    why_company: `I've sold a data product to the same technical buyers ${c} serves, and the motion you describe — discovery-led, annual contracts, Solutions Engineers in the room — is the one I rebuilt at my last company.`,
     location_line: "I'm set up to work remotely and comfortable across EMEA and US hours.", variant: 'new_business_ae',
     role_summary: `Mid-market new-business AE for ${c} in EMEA: full cycle from discovery to annual contract, paired with SEs.`,
     changes: ['Headline mirrors "Mid-Market Account Executive"', 'Summary leads with technical discovery'],
