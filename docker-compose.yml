@@ -1,0 +1,45 @@
+# JobRadar: n8n (the brain) + renderer (Word/PDF files) + Gotenberg (PDF engine).
+# Same file on a Mac or a small Linux server. Managed by ./jobradar — you rarely need to touch this.
+services:
+  n8n:
+    image: n8nio/n8n:${N8N_VERSION:-2.48.7}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"            # editor + local webhooks, never exposed to the network
+    env_file: .env
+    environment:
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false # workflows read their keys from .env
+      - N8N_RESTRICT_FILE_ACCESS_TO=/home/node/jobradar
+      - JOBRADAR_DIR=/home/node/jobradar
+      - RENDERER_URL=http://renderer:3100
+      - GENERIC_TIMEZONE=${TIMEZONE:-UTC}
+      - TZ=${TIMEZONE:-UTC}
+      - N8N_SECURE_COOKIE=false            # plain http on localhost
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_PERSONALIZATION_ENABLED=false
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=336        # keep 14 days of run history
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./:/home/node/jobradar:ro          # settings.json, candidate/, workflows/, tools/
+    depends_on:
+      - renderer
+
+  renderer:
+    build: ./renderer
+    image: jobradar-renderer:local
+    restart: unless-stopped
+    environment:
+      - GOTENBERG_URL=http://gotenberg:3000
+      - OUTPUT_DIR=/data/output
+    volumes:
+      - ./output:/data/output
+    depends_on:
+      - gotenberg
+
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    restart: unless-stopped
+
+volumes:
+  n8n_data:

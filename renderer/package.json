@@ -1,0 +1,9 @@
+{
+  "name": "jobradar-renderer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Markdown → DOCX/PDF for JobRadar",
+  "main": "server.js",
+  "license": "MIT",
+  "dependencies": { "docx": "9.5.1" }
+}

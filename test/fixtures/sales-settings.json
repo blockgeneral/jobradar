@@ -1,0 +1,197 @@
+{
+  "boards": {
+    "_readme": "true = default sales category, false = off, or the board's own category: weworkremotely e.g. remote-programming-jobs / remote-design-jobs, remotive e.g. software-dev / design / product, remoteok tag e.g. engineer / design",
+    "weworkremotely": "remote-sales-and-marketing-jobs",
+    "remotive": "sales-business",
+    "remoteok": "sales",
+    "jobicy": true,
+    "himalayas": true
+  },
+  "boardQueries": [
+    "account executive",
+    "account manager",
+    "partnerships manager",
+    "customer success manager"
+  ],
+  "hiringCafe": {
+    "enabled": true,
+    "via": "mcp",
+    "mcpUrl": "https://hiringcafe-mcp.vercel.app/api/mcp",
+    "queries": [
+      "account executive",
+      "account manager",
+      "partnerships manager"
+    ],
+    "location": "Europe",
+    "everyMinutes": 60,
+    "apifyTaskId": ""
+  },
+  "filters": {
+    "freshHours": 72,
+    "titleInclude": [
+      "account executive",
+      "\\bAE\\b",
+      "account manager",
+      "account director",
+      "business development (manager|executive|lead)",
+      "partner(ship)?s? (manager|executive|lead|account)",
+      "channel (manager|sales|account)",
+      "alliances? manager",
+      "customer success (manager|lead)",
+      "sales executive",
+      "client partner",
+      "commercial (manager|lead|executive)",
+      "new business",
+      "growth (account|sales)",
+      "sales (manager|lead|representative)",
+      "solutions? (sales|consultant)"
+    ],
+    "titleIncludeDream": [
+      "sales development",
+      "\\bSDR\\b",
+      "\\bBDR\\b",
+      "business development representative",
+      "go-to-market",
+      "\\bGTM\\b"
+    ],
+    "titleExclude": [
+      "intern\\b",
+      "internship",
+      "working student",
+      "werkstudent",
+      "junior",
+      "\\bSDR\\b",
+      "\\bBDR\\b",
+      "sales development",
+      "business development representative",
+      "engineer",
+      "recruit",
+      "\\bVP\\b",
+      "vice president",
+      "head of",
+      "chief",
+      "director of",
+      "(german|french|spanish|italian|dutch|nordic|japanese|korean|portuguese|polish|arabic|hebrew|turkish|mandarin)[- ]speaking",
+      "\\bDACH\\b",
+      "public sector",
+      "federal",
+      "government",
+      "\\bLATAM\\b",
+      "\\bAPAC\\b",
+      "\\bANZ\\b",
+      "japan"
+    ],
+    "titleExcludeDream": [
+      "intern\\b",
+      "internship",
+      "working student",
+      "werkstudent",
+      "engineer",
+      "recruit",
+      "\\bVP\\b",
+      "vice president",
+      "chief",
+      "(german|french|spanish|italian|dutch|nordic|japanese|korean|portuguese|polish|arabic|hebrew|turkish|mandarin)[- ]speaking",
+      "\\bDACH\\b",
+      "public sector",
+      "federal",
+      "government",
+      "\\bLATAM\\b",
+      "\\bAPAC\\b",
+      "\\bANZ\\b",
+      "japan"
+    ],
+    "languageExclude": [
+      "fluent (in )?german",
+      "german (language )?(is )?(required|mandatory|a must)",
+      "native(-level)? german",
+      "business[- ]fluent german",
+      "german (at )?(c1|c2)",
+      "(c1|c2) german",
+      "fließend",
+      "verhandlungssicher",
+      "sehr gute deutschkenntnisse",
+      "fluen(t|cy) in (french|spanish|italian|dutch|japanese|korean|portuguese|polish|swedish|danish|norwegian|finnish)"
+    ],
+    "locationExclude": []
+  },
+  "scoring": {
+    "threshold": 70,
+    "dreamThreshold": 55,
+    "maxScoredPerRun": 40,
+    "maxTailoredPerRun": 4
+  },
+  "preview": {
+    "days": 7,
+    "count": 3
+  },
+  "notifications": {
+    "delivery": "instant",
+    "_delivery": "instant = one notification per match as soon as it's found | digest = one summary a day at digestTime",
+    "digestTime": "08:00",
+    "style": "compact",
+    "_style": "compact = role, score, why, what to check | detailed = adds gaps, ATS keywords and what was changed",
+    "files": [
+      "docx"
+    ],
+    "_files": "any of docx, pdf",
+    "minScore": 0,
+    "quietHours": {
+      "from": "22:30",
+      "to": "07:30"
+    },
+    "_quietHours": "Telegram: notifications arrive silently in this window. Email is unaffected.",
+    "buttons": {
+      "linkedinSearch": true,
+      "copyOutreachNote": true,
+      "statusButtons": true
+    }
+  },
+  "reports": {
+    "weekly": true,
+    "weeklyDay": "monday",
+    "time": "08:30",
+    "monthly": true,
+    "checkInAfterDays": 5,
+    "ghostedAfterDays": 21
+  },
+  "replyDetection": {
+    "enabled": false,
+    "_readme": "Email only. Reads new inbox mail from companies you applied to and labels it reply / rejection / interview with Claude."
+  },
+  "_readme": "Test fixture: a generic sales search profile used by test/unit.js and test/e2e.sh.",
+  "companies": [
+    {
+      "url": "https://jobs.ashbyhq.com/n8n",
+      "name": "n8n",
+      "dream": true
+    },
+    {
+      "url": "https://job-boards.greenhouse.io/anthropic",
+      "dream": true
+    },
+    {
+      "url": "https://jobs.ashbyhq.com/supabase",
+      "dream": true
+    },
+    {
+      "url": "https://jobs.ashbyhq.com/posthog",
+      "name": "PostHog"
+    },
+    {
+      "url": "https://jobs.ashbyhq.com/linear"
+    }
+  ],
+  "guardrails": {
+    "neverClaim": [
+      {
+        "pattern": "postgre",
+        "message": "Mentions PostgreSQL — not a skill you claim"
+      },
+      {
+        "pattern": "(built|launched|founded|created|established|stood up) (the |our |a )?(partner|affiliate) (program|programme)",
+        "message": "Claims you built the partner programme"
+      }
+    ]
+  }
+}

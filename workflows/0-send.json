@@ -1,0 +1,221 @@
+{
+  "id": "JobRadarSend0001",
+  "name": "JobRadar · 9 Send (used by the others)",
+  "nodes": [
+    {
+      "id": "JobRadarSend0001-0001",
+      "name": "📨 From other workflows",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "JobRadarSend0001-0002",
+      "name": "🧭 Route",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// 🧭 Route — drop envelopes for channels that aren't switched on\nconst ch = channelsEnabled();\nconst ok = { tg_text: 'telegram', tg_album: 'telegram', tg_call: 'telegram', email: 'email' };\nreturn $input.all().filter((it) => ch.includes(ok[it.json.kind]));\n\n// ───── helpers (generated from src/lib — edit there and rebuild) ─────\n// ---- util.js : small shared helpers (inlined into n8n Code nodes) ----\n\nfunction decodeEntities(s) {\n  if (!s) return '';\n  let out = String(s);\n  // Greenhouse double-escapes (&amp;lt;) so decode twice\n  for (let i = 0; i < 2; i++) {\n    out = out\n      .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"')\n      .replace(/&#39;|&apos;/g, \"'\").replace(/&nbsp;/g, ' ')\n      .replace(/&#(\\d+);/g, (_, n) => String.fromCharCode(Number(n)))\n      .replace(/&amp;/g, '&');\n  }\n  return out;\n}\n\nfunction htmlToText(html) {\n  if (!html) return '';\n  return decodeEntities(String(html))\n    .replace(/<\\s*(br|\\/p|\\/div|\\/li|\\/h\\d|\\/tr)\\s*\\/?>/gi, '\\n')\n    .replace(/<\\s*li[^>]*>/gi, '\\n• ')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/[ \\t]+/g, ' ')\n    .replace(/\\n\\s*\\n\\s*\\n+/g, '\\n\\n')\n    .trim();\n}\n\nfunction escHtml(s) {\n  return String(s == null ? '' : s)\n    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n}\n\nfunction slugify(s, max) {\n  const out = String(s || '')\n    .normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');\n  return out.slice(0, max || 60);\n}\n\nfunction toIso(v) {\n  if (v === null || v === undefined || v === '') return null;\n  if (typeof v === 'number') {\n    const ms = v < 1e12 ? v * 1000 : v; // seconds vs ms\n    const d = new Date(ms);\n    return isNaN(d) ? null : d.toISOString();\n  }\n  let s = String(v).trim();\n  if (/^\\d{10,13}$/.test(s)) return toIso(Number(s));\n  if (/^\\d{4}-\\d\\d-\\d\\d \\d/.test(s)) s = s.replace(' ', 'T');\n  if (/^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d(:\\d\\d(\\.\\d+)?)?$/.test(s)) s += 'Z'; // no timezone → assume UTC\n  const d = new Date(s);\n  return isNaN(d) ? null : d.toISOString();\n}\n\nfunction hoursSince(iso, now) {\n  if (!iso) return null;\n  return ((now || Date.now()) - new Date(iso).getTime()) / 36e5;\n}\n\nfunction humanAge(iso, now) {\n  const h = hoursSince(iso, now);\n  if (h === null) return 'post time unknown';\n  if (h < 1) return Math.max(1, Math.round(h * 60)) + ' min ago';\n  if (h < 48) return Math.round(h) + ' h ago';\n  return Math.round(h / 24) + ' days ago';\n}\n\nfunction stripHtmlComments(md) {\n  return String(md || '').replace(/<!--[\\s\\S]*?-->/g, '').replace(/^\\s+/, '');\n}\n\nfunction extractHtmlComments(md) {\n  const out = [];\n  String(md || '').replace(/<!--([\\s\\S]*?)-->/g, (_, c) => { out.push(c.trim()); return ''; });\n  return out.join('\\n\\n');\n}\n\nfunction truncate(s, n) {\n  s = String(s || '');\n  return s.length > n ? s.slice(0, n) + ' …[truncated]' : s;\n}\n\nfunction jobradarDir() {\n  try { return (typeof $env !== 'undefined' && $env.JOBRADAR_DIR) || '/home/node/jobradar'; } catch (e) { return '/home/node/jobradar'; }\n}\n\nfunction envGet(k) {\n  try { return (typeof $env !== 'undefined' && $env[k]) || undefined; } catch (e) { return undefined; }\n}\n\nfunction channelsEnabled() {\n  return String(envGet('NOTIFY_CHANNELS') || 'telegram').toLowerCase().split(/[\\s,]+/).filter(Boolean);\n}\n\nfunction shortHash(s) {\n  let h = 0x811c9dc5;\n  for (const ch of String(s)) { h ^= ch.codePointAt(0); h = Math.imul(h, 0x01000193) >>> 0; }\n  return h.toString(36).toUpperCase().padStart(6, '0').slice(-6);\n}\n\nfunction fillCoverLetter(base, slots) {\n  let txt = stripHtmlComments(base);\n  for (const k of Object.keys(slots)) txt = txt.split('{{' + k + '}}').join(String(slots[k] || '').trim());\n  return txt.replace(/\\n{3,}/g, '\\n\\n').trim() + '\\n';\n}\n"
+      }
+    },
+    {
+      "id": "JobRadarSend0001-0003",
+      "name": "🔀 By kind",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 3,
+        "output": "={{ ({ tg_text: 0, tg_album: 1, email: 2 })[$json.kind] ?? 0 }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "JobRadarSend0001-0004",
+      "name": "💬 Telegram message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        -180
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.TELEGRAM_API_BASE || 'https://api.telegram.org') + '/bot' + $env.TELEGRAM_BOT_TOKEN + '/sendMessage' }}",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify(Object.assign({ chat_id: $env.TELEGRAM_CHAT_ID }, $json.tg)) }}",
+        "options": {
+          "timeout": 30000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 400
+            }
+          }
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "JobRadarSend0001-0005",
+      "name": "📎 Telegram files (album)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.TELEGRAM_API_BASE || 'https://api.telegram.org') + '/bot' + $env.TELEGRAM_BOT_TOKEN + '/sendMediaGroup' }}",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formData",
+              "name": "chat_id",
+              "value": "={{ $env.TELEGRAM_CHAT_ID }}"
+            },
+            {
+              "parameterType": "formData",
+              "name": "media",
+              "value": "={{ JSON.stringify($json.media) }}"
+            },
+            {
+              "parameterType": "formData",
+              "name": "disable_notification",
+              "value": "={{ $json.silent ? \"true\" : \"false\" }}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "doc1",
+              "inputDataFieldName": "doc1"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "doc2",
+              "inputDataFieldName": "doc2"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 600
+            }
+          }
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "JobRadarSend0001-0006",
+      "name": "✉️ Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        700,
+        180
+      ],
+      "parameters": {
+        "fromEmail": "={{ $env.SMTP_FROM || ('JobRadar <' + $env.SMTP_USER + '>') }}",
+        "toEmail": "={{ $json.to || $env.NOTIFY_EMAIL_TO || $env.SMTP_USER }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "both",
+        "text": "={{ $json.text || \"\" }}",
+        "html": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false,
+          "fileAttachments": "={{ $json.attach || \"\" }}"
+        }
+      },
+      "credentials": {
+        "smtp": {
+          "id": "JobRadarSmtp0001",
+          "name": "JobRadar SMTP"
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "📨 From other workflows": {
+      "main": [
+        [
+          {
+            "node": "🧭 Route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🧭 Route": {
+      "main": [
+        [
+          {
+            "node": "🔀 By kind",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔀 By kind": {
+      "main": [
+        [
+          {
+            "node": "💬 Telegram message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "📎 Telegram files (album)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "✉️ Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}

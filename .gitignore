@@ -1,0 +1,10 @@
+# your private data — never commit
+/.env
+/.credentials.tmp.json
+/candidate/
+/settings.json
+/output/*
+!/output/.gitkeep
+/gmail-filter.xml
+# deps
+node_modules/

@@ -1,0 +1,296 @@
+{
+  "id": "JobRadarActn0001",
+  "name": "JobRadar · 2 Telegram buttons (every minute)",
+  "nodes": [
+    {
+      "id": "JobRadarActn0001-0001",
+      "name": "⏰ Every minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "JobRadarActn0001-0002",
+      "name": "▶️ Run now",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "JobRadarActn0001-0003",
+      "name": "🔗 Run from CLI",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        400
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "jobradar-buttons",
+        "responseMode": "lastNode",
+        "responseData": "noData",
+        "options": {}
+      },
+      "webhookId": "a1b2c3d4-0000-4000-8000-6a6f62726164",
+      "notes": "Local only: ./jobradar uses this",
+      "notesInFlow": true
+    },
+    {
+      "id": "JobRadarActn0001-0004",
+      "name": "📥 Poll Telegram",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// 📥 Poll Telegram — button presses arrive here (no public URL needed: we ask Telegram for updates every minute)\nif (!channelsEnabled().includes('telegram')) return [];\nconst state = $getWorkflowStaticData('global');\nreturn [{ json: { offset: state.offset || 0 } }];\n\n// ───── helpers (generated from src/lib — edit there and rebuild) ─────\n// ---- util.js : small shared helpers (inlined into n8n Code nodes) ----\n\nfunction decodeEntities(s) {\n  if (!s) return '';\n  let out = String(s);\n  // Greenhouse double-escapes (&amp;lt;) so decode twice\n  for (let i = 0; i < 2; i++) {\n    out = out\n      .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"')\n      .replace(/&#39;|&apos;/g, \"'\").replace(/&nbsp;/g, ' ')\n      .replace(/&#(\\d+);/g, (_, n) => String.fromCharCode(Number(n)))\n      .replace(/&amp;/g, '&');\n  }\n  return out;\n}\n\nfunction htmlToText(html) {\n  if (!html) return '';\n  return decodeEntities(String(html))\n    .replace(/<\\s*(br|\\/p|\\/div|\\/li|\\/h\\d|\\/tr)\\s*\\/?>/gi, '\\n')\n    .replace(/<\\s*li[^>]*>/gi, '\\n• ')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/[ \\t]+/g, ' ')\n    .replace(/\\n\\s*\\n\\s*\\n+/g, '\\n\\n')\n    .trim();\n}\n\nfunction escHtml(s) {\n  return String(s == null ? '' : s)\n    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n}\n\nfunction slugify(s, max) {\n  const out = String(s || '')\n    .normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');\n  return out.slice(0, max || 60);\n}\n\nfunction toIso(v) {\n  if (v === null || v === undefined || v === '') return null;\n  if (typeof v === 'number') {\n    const ms = v < 1e12 ? v * 1000 : v; // seconds vs ms\n    const d = new Date(ms);\n    return isNaN(d) ? null : d.toISOString();\n  }\n  let s = String(v).trim();\n  if (/^\\d{10,13}$/.test(s)) return toIso(Number(s));\n  if (/^\\d{4}-\\d\\d-\\d\\d \\d/.test(s)) s = s.replace(' ', 'T');\n  if (/^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d(:\\d\\d(\\.\\d+)?)?$/.test(s)) s += 'Z'; // no timezone → assume UTC\n  const d = new Date(s);\n  return isNaN(d) ? null : d.toISOString();\n}\n\nfunction hoursSince(iso, now) {\n  if (!iso) return null;\n  return ((now || Date.now()) - new Date(iso).getTime()) / 36e5;\n}\n\nfunction humanAge(iso, now) {\n  const h = hoursSince(iso, now);\n  if (h === null) return 'post time unknown';\n  if (h < 1) return Math.max(1, Math.round(h * 60)) + ' min ago';\n  if (h < 48) return Math.round(h) + ' h ago';\n  return Math.round(h / 24) + ' days ago';\n}\n\nfunction stripHtmlComments(md) {\n  return String(md || '').replace(/<!--[\\s\\S]*?-->/g, '').replace(/^\\s+/, '');\n}\n\nfunction extractHtmlComments(md) {\n  const out = [];\n  String(md || '').replace(/<!--([\\s\\S]*?)-->/g, (_, c) => { out.push(c.trim()); return ''; });\n  return out.join('\\n\\n');\n}\n\nfunction truncate(s, n) {\n  s = String(s || '');\n  return s.length > n ? s.slice(0, n) + ' …[truncated]' : s;\n}\n\nfunction jobradarDir() {\n  try { return (typeof $env !== 'undefined' && $env.JOBRADAR_DIR) || '/home/node/jobradar'; } catch (e) { return '/home/node/jobradar'; }\n}\n\nfunction envGet(k) {\n  try { return (typeof $env !== 'undefined' && $env[k]) || undefined; } catch (e) { return undefined; }\n}\n\nfunction channelsEnabled() {\n  return String(envGet('NOTIFY_CHANNELS') || 'telegram').toLowerCase().split(/[\\s,]+/).filter(Boolean);\n}\n\nfunction shortHash(s) {\n  let h = 0x811c9dc5;\n  for (const ch of String(s)) { h ^= ch.codePointAt(0); h = Math.imul(h, 0x01000193) >>> 0; }\n  return h.toString(36).toUpperCase().padStart(6, '0').slice(-6);\n}\n\nfunction fillCoverLetter(base, slots) {\n  let txt = stripHtmlComments(base);\n  for (const k of Object.keys(slots)) txt = txt.split('{{' + k + '}}').join(String(slots[k] || '').trim());\n  return txt.replace(/\\n{3,}/g, '\\n\\n').trim() + '\\n';\n}\n"
+      }
+    },
+    {
+      "id": "JobRadarActn0001-0005",
+      "name": "🛰 Get button presses",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "url": "={{ ($env.TELEGRAM_API_BASE || 'https://api.telegram.org') + '/bot' + $env.TELEGRAM_BOT_TOKEN + '/getUpdates?timeout=0&allowed_updates=%5B%22callback_query%22%5D&offset=' + $json.offset }}",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "responseFormat": "text",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "JobRadarActn0001-0006",
+      "name": "🧠 Parse presses",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// 🧠 Parse button presses → tracker updates + Telegram replies\nconst state = $getWorkflowStaticData('global');\nlet body = $input.first().json;\nif (typeof body.data === 'string') { try { body = JSON.parse(body.data); } catch (e) { body = {}; } }\nconst updates = (body && body.result) || [];\nif (updates.length) state.offset = updates[updates.length - 1].update_id + 1;\nconst myChat = String(envGet('TELEGRAM_CHAT_ID') || '');\nconst now = new Date().toISOString();\nconst out = [];\nconst OUT_LABEL = { reply: '💬 replied', rejected: '❌ rejected', intro: '📞 intro call', offer: '🎉 offer', none: '👻 no answer' };\nfor (const u of updates) {\n  const q = u.callback_query;\n  if (!q || !q.data || String(q.message && q.message.chat && q.message.chat.id) !== myChat) continue;\n  const [act, id, outcome] = q.data.split(':');\n  let set = null, toast = '', markup = (q.message.reply_markup && q.message.reply_markup.inline_keyboard) || [];\n  if (act === 'ap') { set = { status: 'applied', applied_at: now }; toast = 'Marked as applied ✅ Good luck!'; }\n  else if (act === 'sk') { set = { status: 'skipped' }; toast = 'Skipped ⏭'; }\n  else if (act === 'o' && OUT_LABEL[outcome]) { set = { outcome, outcome_at: now }; toast = 'Saved: ' + OUT_LABEL[outcome]; }\n  else if (act === 'noop') { out.push({ json: { tgCalls: [{ method: 'answerCallbackQuery', body: { callback_query_id: q.id } }] } }); continue; }\n  if (!set) continue;\n  // replace the pressed row with a status line so the card shows what you did\n  if (act === 'ap' || act === 'sk') {\n    markup = markup.filter((row) => !row.some((b) => b.callback_data && /^(ap|sk):/.test(b.callback_data)));\n    markup.push([{ text: act === 'ap' ? `✅ Applied · ${now.slice(5, 10)}` : '⏭ Skipped', callback_data: 'noop:' + id }]);\n  } else {\n    const idx = markup.findIndex((row) => row.some((b) => b.callback_data && b.callback_data.startsWith(`o:${id}:`)));\n    if (idx >= 0) markup[idx] = [{ text: OUT_LABEL[outcome], callback_data: 'noop:' + id }];\n  }\n  out.push({ json: { jr_id: id, set, tgCalls: [\n    { method: 'answerCallbackQuery', body: { callback_query_id: q.id, text: toast } },\n    { method: 'editMessageReplyMarkup', body: { chat_id: q.message.chat.id, message_id: q.message.message_id, reply_markup: { inline_keyboard: markup } } },\n  ] } });\n}\nreturn out;\n\n// ───── helpers (generated from src/lib — edit there and rebuild) ─────\n// ---- util.js : small shared helpers (inlined into n8n Code nodes) ----\n\nfunction decodeEntities(s) {\n  if (!s) return '';\n  let out = String(s);\n  // Greenhouse double-escapes (&amp;lt;) so decode twice\n  for (let i = 0; i < 2; i++) {\n    out = out\n      .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"')\n      .replace(/&#39;|&apos;/g, \"'\").replace(/&nbsp;/g, ' ')\n      .replace(/&#(\\d+);/g, (_, n) => String.fromCharCode(Number(n)))\n      .replace(/&amp;/g, '&');\n  }\n  return out;\n}\n\nfunction htmlToText(html) {\n  if (!html) return '';\n  return decodeEntities(String(html))\n    .replace(/<\\s*(br|\\/p|\\/div|\\/li|\\/h\\d|\\/tr)\\s*\\/?>/gi, '\\n')\n    .replace(/<\\s*li[^>]*>/gi, '\\n• ')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/[ \\t]+/g, ' ')\n    .replace(/\\n\\s*\\n\\s*\\n+/g, '\\n\\n')\n    .trim();\n}\n\nfunction escHtml(s) {\n  return String(s == null ? '' : s)\n    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n}\n\nfunction slugify(s, max) {\n  const out = String(s || '')\n    .normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');\n  return out.slice(0, max || 60);\n}\n\nfunction toIso(v) {\n  if (v === null || v === undefined || v === '') return null;\n  if (typeof v === 'number') {\n    const ms = v < 1e12 ? v * 1000 : v; // seconds vs ms\n    const d = new Date(ms);\n    return isNaN(d) ? null : d.toISOString();\n  }\n  let s = String(v).trim();\n  if (/^\\d{10,13}$/.test(s)) return toIso(Number(s));\n  if (/^\\d{4}-\\d\\d-\\d\\d \\d/.test(s)) s = s.replace(' ', 'T');\n  if (/^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d(:\\d\\d(\\.\\d+)?)?$/.test(s)) s += 'Z'; // no timezone → assume UTC\n  const d = new Date(s);\n  return isNaN(d) ? null : d.toISOString();\n}\n\nfunction hoursSince(iso, now) {\n  if (!iso) return null;\n  return ((now || Date.now()) - new Date(iso).getTime()) / 36e5;\n}\n\nfunction humanAge(iso, now) {\n  const h = hoursSince(iso, now);\n  if (h === null) return 'post time unknown';\n  if (h < 1) return Math.max(1, Math.round(h * 60)) + ' min ago';\n  if (h < 48) return Math.round(h) + ' h ago';\n  return Math.round(h / 24) + ' days ago';\n}\n\nfunction stripHtmlComments(md) {\n  return String(md || '').replace(/<!--[\\s\\S]*?-->/g, '').replace(/^\\s+/, '');\n}\n\nfunction extractHtmlComments(md) {\n  const out = [];\n  String(md || '').replace(/<!--([\\s\\S]*?)-->/g, (_, c) => { out.push(c.trim()); return ''; });\n  return out.join('\\n\\n');\n}\n\nfunction truncate(s, n) {\n  s = String(s || '');\n  return s.length > n ? s.slice(0, n) + ' …[truncated]' : s;\n}\n\nfunction jobradarDir() {\n  try { return (typeof $env !== 'undefined' && $env.JOBRADAR_DIR) || '/home/node/jobradar'; } catch (e) { return '/home/node/jobradar'; }\n}\n\nfunction envGet(k) {\n  try { return (typeof $env !== 'undefined' && $env[k]) || undefined; } catch (e) { return undefined; }\n}\n\nfunction channelsEnabled() {\n  return String(envGet('NOTIFY_CHANNELS') || 'telegram').toLowerCase().split(/[\\s,]+/).filter(Boolean);\n}\n\nfunction shortHash(s) {\n  let h = 0x811c9dc5;\n  for (const ch of String(s)) { h ^= ch.codePointAt(0); h = Math.imul(h, 0x01000193) >>> 0; }\n  return h.toString(36).toUpperCase().padStart(6, '0').slice(-6);\n}\n\nfunction fillCoverLetter(base, slots) {\n  let txt = stripHtmlComments(base);\n  for (const k of Object.keys(slots)) txt = txt.split('{{' + k + '}}').join(String(slots[k] || '').trim());\n  return txt.replace(/\\n{3,}/g, '\\n\\n').trim() + '\\n';\n}\n"
+      }
+    },
+    {
+      "id": "JobRadarActn0001-0007",
+      "name": "📝 Rows to update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        -100
+      ],
+      "parameters": {
+        "jsCode": "// rows to update in jobradar_jobs\nreturn $input.all().filter((it) => it.json.set).map((it) => ({ json: Object.assign({ jr_id: it.json.jr_id }, it.json.set) }));\n\n// ───── helpers (generated from src/lib — edit there and rebuild) ─────\n// ---- util.js : small shared helpers (inlined into n8n Code nodes) ----\n\nfunction decodeEntities(s) {\n  if (!s) return '';\n  let out = String(s);\n  // Greenhouse double-escapes (&amp;lt;) so decode twice\n  for (let i = 0; i < 2; i++) {\n    out = out\n      .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"')\n      .replace(/&#39;|&apos;/g, \"'\").replace(/&nbsp;/g, ' ')\n      .replace(/&#(\\d+);/g, (_, n) => String.fromCharCode(Number(n)))\n      .replace(/&amp;/g, '&');\n  }\n  return out;\n}\n\nfunction htmlToText(html) {\n  if (!html) return '';\n  return decodeEntities(String(html))\n    .replace(/<\\s*(br|\\/p|\\/div|\\/li|\\/h\\d|\\/tr)\\s*\\/?>/gi, '\\n')\n    .replace(/<\\s*li[^>]*>/gi, '\\n• ')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/[ \\t]+/g, ' ')\n    .replace(/\\n\\s*\\n\\s*\\n+/g, '\\n\\n')\n    .trim();\n}\n\nfunction escHtml(s) {\n  return String(s == null ? '' : s)\n    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n}\n\nfunction slugify(s, max) {\n  const out = String(s || '')\n    .normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');\n  return out.slice(0, max || 60);\n}\n\nfunction toIso(v) {\n  if (v === null || v === undefined || v === '') return null;\n  if (typeof v === 'number') {\n    const ms = v < 1e12 ? v * 1000 : v; // seconds vs ms\n    const d = new Date(ms);\n    return isNaN(d) ? null : d.toISOString();\n  }\n  let s = String(v).trim();\n  if (/^\\d{10,13}$/.test(s)) return toIso(Number(s));\n  if (/^\\d{4}-\\d\\d-\\d\\d \\d/.test(s)) s = s.replace(' ', 'T');\n  if (/^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d(:\\d\\d(\\.\\d+)?)?$/.test(s)) s += 'Z'; // no timezone → assume UTC\n  const d = new Date(s);\n  return isNaN(d) ? null : d.toISOString();\n}\n\nfunction hoursSince(iso, now) {\n  if (!iso) return null;\n  return ((now || Date.now()) - new Date(iso).getTime()) / 36e5;\n}\n\nfunction humanAge(iso, now) {\n  const h = hoursSince(iso, now);\n  if (h === null) return 'post time unknown';\n  if (h < 1) return Math.max(1, Math.round(h * 60)) + ' min ago';\n  if (h < 48) return Math.round(h) + ' h ago';\n  return Math.round(h / 24) + ' days ago';\n}\n\nfunction stripHtmlComments(md) {\n  return String(md || '').replace(/<!--[\\s\\S]*?-->/g, '').replace(/^\\s+/, '');\n}\n\nfunction extractHtmlComments(md) {\n  const out = [];\n  String(md || '').replace(/<!--([\\s\\S]*?)-->/g, (_, c) => { out.push(c.trim()); return ''; });\n  return out.join('\\n\\n');\n}\n\nfunction truncate(s, n) {\n  s = String(s || '');\n  return s.length > n ? s.slice(0, n) + ' …[truncated]' : s;\n}\n\nfunction jobradarDir() {\n  try { return (typeof $env !== 'undefined' && $env.JOBRADAR_DIR) || '/home/node/jobradar'; } catch (e) { return '/home/node/jobradar'; }\n}\n\nfunction envGet(k) {\n  try { return (typeof $env !== 'undefined' && $env[k]) || undefined; } catch (e) { return undefined; }\n}\n\nfunction channelsEnabled() {\n  return String(envGet('NOTIFY_CHANNELS') || 'telegram').toLowerCase().split(/[\\s,]+/).filter(Boolean);\n}\n\nfunction shortHash(s) {\n  let h = 0x811c9dc5;\n  for (const ch of String(s)) { h ^= ch.codePointAt(0); h = Math.imul(h, 0x01000193) >>> 0; }\n  return h.toString(36).toUpperCase().padStart(6, '0').slice(-6);\n}\n\nfunction fillCoverLetter(base, slots) {\n  let txt = stripHtmlComments(base);\n  for (const k of Object.keys(slots)) txt = txt.split('{{' + k + '}}').join(String(slots[k] || '').trim());\n  return txt.replace(/\\n{3,}/g, '\\n\\n').trim() + '\\n';\n}\n"
+      }
+    },
+    {
+      "id": "JobRadarActn0001-0008",
+      "name": "🗃️ Update tracker",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1100,
+        -100
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "jobradar_jobs"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "jr_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.jr_id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": null
+        },
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "JobRadarActn0001-0009",
+      "name": "🔁 Replies to Telegram",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        100
+      ],
+      "parameters": {
+        "jsCode": "// Telegram replies (toast + updated buttons)\nreturn $input.all().flatMap((it) => it.json.tgCalls.map((c) => ({ json: c })));\n\n// ───── helpers (generated from src/lib — edit there and rebuild) ─────\n// ---- util.js : small shared helpers (inlined into n8n Code nodes) ----\n\nfunction decodeEntities(s) {\n  if (!s) return '';\n  let out = String(s);\n  // Greenhouse double-escapes (&amp;lt;) so decode twice\n  for (let i = 0; i < 2; i++) {\n    out = out\n      .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"')\n      .replace(/&#39;|&apos;/g, \"'\").replace(/&nbsp;/g, ' ')\n      .replace(/&#(\\d+);/g, (_, n) => String.fromCharCode(Number(n)))\n      .replace(/&amp;/g, '&');\n  }\n  return out;\n}\n\nfunction htmlToText(html) {\n  if (!html) return '';\n  return decodeEntities(String(html))\n    .replace(/<\\s*(br|\\/p|\\/div|\\/li|\\/h\\d|\\/tr)\\s*\\/?>/gi, '\\n')\n    .replace(/<\\s*li[^>]*>/gi, '\\n• ')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/[ \\t]+/g, ' ')\n    .replace(/\\n\\s*\\n\\s*\\n+/g, '\\n\\n')\n    .trim();\n}\n\nfunction escHtml(s) {\n  return String(s == null ? '' : s)\n    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n}\n\nfunction slugify(s, max) {\n  const out = String(s || '')\n    .normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');\n  return out.slice(0, max || 60);\n}\n\nfunction toIso(v) {\n  if (v === null || v === undefined || v === '') return null;\n  if (typeof v === 'number') {\n    const ms = v < 1e12 ? v * 1000 : v; // seconds vs ms\n    const d = new Date(ms);\n    return isNaN(d) ? null : d.toISOString();\n  }\n  let s = String(v).trim();\n  if (/^\\d{10,13}$/.test(s)) return toIso(Number(s));\n  if (/^\\d{4}-\\d\\d-\\d\\d \\d/.test(s)) s = s.replace(' ', 'T');\n  if (/^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d(:\\d\\d(\\.\\d+)?)?$/.test(s)) s += 'Z'; // no timezone → assume UTC\n  const d = new Date(s);\n  return isNaN(d) ? null : d.toISOString();\n}\n\nfunction hoursSince(iso, now) {\n  if (!iso) return null;\n  return ((now || Date.now()) - new Date(iso).getTime()) / 36e5;\n}\n\nfunction humanAge(iso, now) {\n  const h = hoursSince(iso, now);\n  if (h === null) return 'post time unknown';\n  if (h < 1) return Math.max(1, Math.round(h * 60)) + ' min ago';\n  if (h < 48) return Math.round(h) + ' h ago';\n  return Math.round(h / 24) + ' days ago';\n}\n\nfunction stripHtmlComments(md) {\n  return String(md || '').replace(/<!--[\\s\\S]*?-->/g, '').replace(/^\\s+/, '');\n}\n\nfunction extractHtmlComments(md) {\n  const out = [];\n  String(md || '').replace(/<!--([\\s\\S]*?)-->/g, (_, c) => { out.push(c.trim()); return ''; });\n  return out.join('\\n\\n');\n}\n\nfunction truncate(s, n) {\n  s = String(s || '');\n  return s.length > n ? s.slice(0, n) + ' …[truncated]' : s;\n}\n\nfunction jobradarDir() {\n  try { return (typeof $env !== 'undefined' && $env.JOBRADAR_DIR) || '/home/node/jobradar'; } catch (e) { return '/home/node/jobradar'; }\n}\n\nfunction envGet(k) {\n  try { return (typeof $env !== 'undefined' && $env[k]) || undefined; } catch (e) { return undefined; }\n}\n\nfunction channelsEnabled() {\n  return String(envGet('NOTIFY_CHANNELS') || 'telegram').toLowerCase().split(/[\\s,]+/).filter(Boolean);\n}\n\nfunction shortHash(s) {\n  let h = 0x811c9dc5;\n  for (const ch of String(s)) { h ^= ch.codePointAt(0); h = Math.imul(h, 0x01000193) >>> 0; }\n  return h.toString(36).toUpperCase().padStart(6, '0').slice(-6);\n}\n\nfunction fillCoverLetter(base, slots) {\n  let txt = stripHtmlComments(base);\n  for (const k of Object.keys(slots)) txt = txt.split('{{' + k + '}}').join(String(slots[k] || '').trim());\n  return txt.replace(/\\n{3,}/g, '\\n\\n').trim() + '\\n';\n}\n"
+      }
+    },
+    {
+      "id": "JobRadarActn0001-0010",
+      "name": "✅ Confirm in Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.TELEGRAM_API_BASE || 'https://api.telegram.org') + '/bot' + $env.TELEGRAM_BOT_TOKEN + '/' + $json.method }}",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "⏰ Every minute": {
+      "main": [
+        [
+          {
+            "node": "📥 Poll Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "▶️ Run now": {
+      "main": [
+        [
+          {
+            "node": "📥 Poll Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔗 Run from CLI": {
+      "main": [
+        [
+          {
+            "node": "📥 Poll Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📥 Poll Telegram": {
+      "main": [
+        [
+          {
+            "node": "🛰 Get button presses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🛰 Get button presses": {
+      "main": [
+        [
+          {
+            "node": "🧠 Parse presses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🧠 Parse presses": {
+      "main": [
+        [
+          {
+            "node": "📝 Rows to update",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "🔁 Replies to Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📝 Rows to update": {
+      "main": [
+        [
+          {
+            "node": "🗃️ Update tracker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔁 Replies to Telegram": {
+      "main": [
+        [
+          {
+            "node": "✅ Confirm in Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}

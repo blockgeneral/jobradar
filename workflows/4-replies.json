@@ -1,0 +1,312 @@
+{
+  "id": "JobRadarRepl0001",
+  "name": "JobRadar · 4 Reply detection (optional)",
+  "nodes": [
+    {
+      "id": "JobRadarRepl0001-0001",
+      "name": "📨 New inbox mail",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "mailbox": "INBOX",
+        "postProcessAction": "nothing",
+        "format": "simple",
+        "options": {
+          "customEmailConfig": "[\"UNSEEN\"]",
+          "trackLastMessageId": true
+        }
+      },
+      "credentials": {
+        "imap": {
+          "id": "JobRadarImap0001",
+          "name": "JobRadar IMAP"
+        }
+      }
+    },
+    {
+      "id": "JobRadarRepl0001-0002",
+      "name": "🗃️ Applications",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "jobradar_jobs"
+        },
+        "returnAll": true
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "JobRadarRepl0001-0003",
+      "name": "🔍 Plausible replies",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// 🔍 Reply detection — only mail that plausibly comes from a company you applied to goes to Claude\nconst rows = $input.all().map((x) => x.json).filter((r) => r && r.jr_id && r.status === 'applied');\nconst mails = $('📨 New inbox mail').all().map((x) => x.json);\nconst ATS = /(greenhouse|ashbyhq|lever\\.co|workable|recruitee|personio|smartrecruiters|teamtailor|bamboohr|myworkday|icims|jobvite)/i;\nconst norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');\nconst out = [];\nfor (const m of mails) {\n  const from = String(m.from || (m.metadata && m.metadata.from) || '');\n  const subj = String(m.subject || '');\n  const text = String(m.text || m.textPlain || m.textHtml || '').slice(0, 2500);\n  const hay = norm(from + ' ' + subj);\n  const cands = rows.filter((r) => { const c = norm(r.company); return c.length >= 3 && (hay.includes(c) || (ATS.test(from) && norm(text).includes(c))); });\n  if (!cands.length) continue;\n  const list = cands.slice(0, 6).map((r) => `${r.jr_id}: ${r.company} — ${r.title}`).join('\\n');\n  out.push({ json: { from, subject: subj, request: {\n    model: envGet('SCORING_MODEL') || 'claude-haiku-5-5', max_tokens: 300,\n    tools: [{ name: 'classify', description: 'Classify a recruiting email', input_schema: { type: 'object', properties: {\n      jr_id: { type: 'string', description: 'Which application this email is about (one of the ids), or \"none\".' },\n      outcome: { type: 'string', enum: ['reply', 'rejected', 'intro', 'offer', 'irrelevant'], description: 'reply = a human replied/asked something; intro = invitation to a call/interview; rejected = not moving forward; irrelevant = newsletter, auto-acknowledgement (\"we received your application\"), marketing.' },\n      summary: { type: 'string', description: 'One short line for the candidate.' } }, required: ['jr_id', 'outcome', 'summary'] } }],\n    tool_choice: { type: 'tool', name: 'classify' },\n    messages: [{ role: 'user', content: `Applications:\\n${list}\\n\\nEmail\\nFrom: ${from}\\nSubject: ${subj}\\n\\n${text}` }],\n  } } });\n}\nreturn out;\n\n// ───── helpers (generated from src/lib — edit there and rebuild) ─────\n// ---- util.js : small shared helpers (inlined into n8n Code nodes) ----\n\nfunction decodeEntities(s) {\n  if (!s) return '';\n  let out = String(s);\n  // Greenhouse double-escapes (&amp;lt;) so decode twice\n  for (let i = 0; i < 2; i++) {\n    out = out\n      .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"')\n      .replace(/&#39;|&apos;/g, \"'\").replace(/&nbsp;/g, ' ')\n      .replace(/&#(\\d+);/g, (_, n) => String.fromCharCode(Number(n)))\n      .replace(/&amp;/g, '&');\n  }\n  return out;\n}\n\nfunction htmlToText(html) {\n  if (!html) return '';\n  return decodeEntities(String(html))\n    .replace(/<\\s*(br|\\/p|\\/div|\\/li|\\/h\\d|\\/tr)\\s*\\/?>/gi, '\\n')\n    .replace(/<\\s*li[^>]*>/gi, '\\n• ')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/[ \\t]+/g, ' ')\n    .replace(/\\n\\s*\\n\\s*\\n+/g, '\\n\\n')\n    .trim();\n}\n\nfunction escHtml(s) {\n  return String(s == null ? '' : s)\n    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n}\n\nfunction slugify(s, max) {\n  const out = String(s || '')\n    .normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');\n  return out.slice(0, max || 60);\n}\n\nfunction toIso(v) {\n  if (v === null || v === undefined || v === '') return null;\n  if (typeof v === 'number') {\n    const ms = v < 1e12 ? v * 1000 : v; // seconds vs ms\n    const d = new Date(ms);\n    return isNaN(d) ? null : d.toISOString();\n  }\n  let s = String(v).trim();\n  if (/^\\d{10,13}$/.test(s)) return toIso(Number(s));\n  if (/^\\d{4}-\\d\\d-\\d\\d \\d/.test(s)) s = s.replace(' ', 'T');\n  if (/^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d(:\\d\\d(\\.\\d+)?)?$/.test(s)) s += 'Z'; // no timezone → assume UTC\n  const d = new Date(s);\n  return isNaN(d) ? null : d.toISOString();\n}\n\nfunction hoursSince(iso, now) {\n  if (!iso) return null;\n  return ((now || Date.now()) - new Date(iso).getTime()) / 36e5;\n}\n\nfunction humanAge(iso, now) {\n  const h = hoursSince(iso, now);\n  if (h === null) return 'post time unknown';\n  if (h < 1) return Math.max(1, Math.round(h * 60)) + ' min ago';\n  if (h < 48) return Math.round(h) + ' h ago';\n  return Math.round(h / 24) + ' days ago';\n}\n\nfunction stripHtmlComments(md) {\n  return String(md || '').replace(/<!--[\\s\\S]*?-->/g, '').replace(/^\\s+/, '');\n}\n\nfunction extractHtmlComments(md) {\n  const out = [];\n  String(md || '').replace(/<!--([\\s\\S]*?)-->/g, (_, c) => { out.push(c.trim()); return ''; });\n  return out.join('\\n\\n');\n}\n\nfunction truncate(s, n) {\n  s = String(s || '');\n  return s.length > n ? s.slice(0, n) + ' …[truncated]' : s;\n}\n\nfunction jobradarDir() {\n  try { return (typeof $env !== 'undefined' && $env.JOBRADAR_DIR) || '/home/node/jobradar'; } catch (e) { return '/home/node/jobradar'; }\n}\n\nfunction envGet(k) {\n  try { return (typeof $env !== 'undefined' && $env[k]) || undefined; } catch (e) { return undefined; }\n}\n\nfunction channelsEnabled() {\n  return String(envGet('NOTIFY_CHANNELS') || 'telegram').toLowerCase().split(/[\\s,]+/).filter(Boolean);\n}\n\nfunction shortHash(s) {\n  let h = 0x811c9dc5;\n  for (const ch of String(s)) { h ^= ch.codePointAt(0); h = Math.imul(h, 0x01000193) >>> 0; }\n  return h.toString(36).toUpperCase().padStart(6, '0').slice(-6);\n}\n\nfunction fillCoverLetter(base, slots) {\n  let txt = stripHtmlComments(base);\n  for (const k of Object.keys(slots)) txt = txt.split('{{' + k + '}}').join(String(slots[k] || '').trim());\n  return txt.replace(/\\n{3,}/g, '\\n\\n').trim() + '\\n';\n}\n"
+      },
+      "notes": "Only mail mentioning a company you applied to",
+      "notesInFlow": true
+    },
+    {
+      "id": "JobRadarRepl0001-0004",
+      "name": "🤖 Classify (Claude Haiku)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com') + '/v1/messages' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.request) }}",
+        "options": {
+          "timeout": 60000,
+          "batching": {
+            "batch": {
+              "batchSize": 3,
+              "batchInterval": 1500
+            }
+          }
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notesInFlow": true
+    },
+    {
+      "id": "JobRadarRepl0001-0005",
+      "name": "🏷️ Verdicts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Apply Claude's verdicts → tracker + a heads-up notification\nconst prev = $('🔍 Plausible replies').all();\nconst out = [];\n$input.all().forEach((it, i) => {\n  const v = toolInput(it.json);\n  const p = prev[i] && prev[i].json;\n  if (!v || !p || v.outcome === 'irrelevant' || !/^JR-/.test(v.jr_id || '')) return;\n  const icon = { reply: '💬', rejected: '❌', intro: '📞', offer: '🎉' }[v.outcome] || '📬';\n  out.push({ json: { row: { jr_id: v.jr_id, outcome: v.outcome, outcome_at: new Date().toISOString() },\n    note: `${icon} ${v.summary}\\nFrom: ${p.from}\\nSubject: ${p.subject}` } });\n});\nreturn out;\n\n// ───── helpers (generated from src/lib — edit there and rebuild) ─────\n// ---- util.js : small shared helpers (inlined into n8n Code nodes) ----\n\nfunction decodeEntities(s) {\n  if (!s) return '';\n  let out = String(s);\n  // Greenhouse double-escapes (&amp;lt;) so decode twice\n  for (let i = 0; i < 2; i++) {\n    out = out\n      .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"')\n      .replace(/&#39;|&apos;/g, \"'\").replace(/&nbsp;/g, ' ')\n      .replace(/&#(\\d+);/g, (_, n) => String.fromCharCode(Number(n)))\n      .replace(/&amp;/g, '&');\n  }\n  return out;\n}\n\nfunction htmlToText(html) {\n  if (!html) return '';\n  return decodeEntities(String(html))\n    .replace(/<\\s*(br|\\/p|\\/div|\\/li|\\/h\\d|\\/tr)\\s*\\/?>/gi, '\\n')\n    .replace(/<\\s*li[^>]*>/gi, '\\n• ')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/[ \\t]+/g, ' ')\n    .replace(/\\n\\s*\\n\\s*\\n+/g, '\\n\\n')\n    .trim();\n}\n\nfunction escHtml(s) {\n  return String(s == null ? '' : s)\n    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n}\n\nfunction slugify(s, max) {\n  const out = String(s || '')\n    .normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');\n  return out.slice(0, max || 60);\n}\n\nfunction toIso(v) {\n  if (v === null || v === undefined || v === '') return null;\n  if (typeof v === 'number') {\n    const ms = v < 1e12 ? v * 1000 : v; // seconds vs ms\n    const d = new Date(ms);\n    return isNaN(d) ? null : d.toISOString();\n  }\n  let s = String(v).trim();\n  if (/^\\d{10,13}$/.test(s)) return toIso(Number(s));\n  if (/^\\d{4}-\\d\\d-\\d\\d \\d/.test(s)) s = s.replace(' ', 'T');\n  if (/^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d(:\\d\\d(\\.\\d+)?)?$/.test(s)) s += 'Z'; // no timezone → assume UTC\n  const d = new Date(s);\n  return isNaN(d) ? null : d.toISOString();\n}\n\nfunction hoursSince(iso, now) {\n  if (!iso) return null;\n  return ((now || Date.now()) - new Date(iso).getTime()) / 36e5;\n}\n\nfunction humanAge(iso, now) {\n  const h = hoursSince(iso, now);\n  if (h === null) return 'post time unknown';\n  if (h < 1) return Math.max(1, Math.round(h * 60)) + ' min ago';\n  if (h < 48) return Math.round(h) + ' h ago';\n  return Math.round(h / 24) + ' days ago';\n}\n\nfunction stripHtmlComments(md) {\n  return String(md || '').replace(/<!--[\\s\\S]*?-->/g, '').replace(/^\\s+/, '');\n}\n\nfunction extractHtmlComments(md) {\n  const out = [];\n  String(md || '').replace(/<!--([\\s\\S]*?)-->/g, (_, c) => { out.push(c.trim()); return ''; });\n  return out.join('\\n\\n');\n}\n\nfunction truncate(s, n) {\n  s = String(s || '');\n  return s.length > n ? s.slice(0, n) + ' …[truncated]' : s;\n}\n\nfunction jobradarDir() {\n  try { return (typeof $env !== 'undefined' && $env.JOBRADAR_DIR) || '/home/node/jobradar'; } catch (e) { return '/home/node/jobradar'; }\n}\n\nfunction envGet(k) {\n  try { return (typeof $env !== 'undefined' && $env[k]) || undefined; } catch (e) { return undefined; }\n}\n\nfunction channelsEnabled() {\n  return String(envGet('NOTIFY_CHANNELS') || 'telegram').toLowerCase().split(/[\\s,]+/).filter(Boolean);\n}\n\nfunction shortHash(s) {\n  let h = 0x811c9dc5;\n  for (const ch of String(s)) { h ^= ch.codePointAt(0); h = Math.imul(h, 0x01000193) >>> 0; }\n  return h.toString(36).toUpperCase().padStart(6, '0').slice(-6);\n}\n\nfunction fillCoverLetter(base, slots) {\n  let txt = stripHtmlComments(base);\n  for (const k of Object.keys(slots)) txt = txt.split('{{' + k + '}}').join(String(slots[k] || '').trim());\n  return txt.replace(/\\n{3,}/g, '\\n\\n').trim() + '\\n';\n}\n\n// ---- prompts.js : Claude requests (tool-forced JSON, so output is always parseable) ----\n\nfunction scoreTool() { return {\n  name: 'job_fit',\n  description: 'Structured fit assessment of one job posting for this candidate.',\n  input_schema: {\n    type: 'object',\n    properties: {\n      location_eligible: { type: 'string', enum: ['yes', 'no', 'unclear'], description: 'Can the candidate (based where the profile says) be hired for this role as posted, judged against the location rules in their search profile?' },\n      location_reason: { type: 'string' },\n      english_only: { type: 'string', enum: ['yes', 'no', 'unclear'], description: 'no = posting requires fluency in a language other than English.' },\n      language_reason: { type: 'string' },\n      comp_meets_floor: { type: 'string', enum: ['yes', 'no', 'unknown'], description: 'Compare the stated pay range to the floor in the profile (convert currencies; for commission roles compare OTE if given). unknown if not stated or no floor set.' },\n      comp_note: { type: 'string' },\n      role_family: { type: 'string', description: 'Short label for the kind of role, in the candidate\\'s field, e.g. \"new-business AE\", \"backend engineer\", \"product designer\".' },\n      seniority_fit: { type: 'string', enum: ['under', 'fit', 'stretch', 'over'] },\n      score: { type: 'integer', minimum: 0, maximum: 100, description: 'Overall chance this candidate gets an intro call AND would want the job. Be strict: 80+ only for strong, realistic matches.' },\n      why: { type: 'array', items: { type: 'string' }, maxItems: 4, description: 'Concrete reasons it fits, tied to the candidate\\'s actual experience. First item = the single strongest reason in under 90 characters.' },\n      gaps: { type: 'array', items: { type: 'string' }, maxItems: 4, description: 'Honest gaps a recruiter would notice.' },\n      red_flags: { type: 'array', items: { type: 'string' }, maxItems: 3 },\n      keywords: { type: 'array', items: { type: 'string' }, maxItems: 12, description: 'The 8-12 skills/terms an ATS or recruiter would screen for in this posting (exact wording from the posting).' },\n      hiring_contact: { type: 'string', description: 'Name/title of hiring manager or recruiter if the posting mentions one, else empty.' },\n    },\n    required: ['location_eligible', 'english_only', 'comp_meets_floor', 'role_family', 'seniority_fit', 'score', 'why', 'gaps', 'keywords'],\n  },\n}; }\n\nfunction scoreRequest(job, profileMd, resumeMd, model) {\n  const system = `You screen job postings for one specific candidate. You are strict and honest: a wasted application costs them time, a missed good one costs them more. Judge only from the posting text and the candidate files. Never assume facts that are not written.`;\n  const user = `<candidate_search_profile>\\n${stripHtmlComments(profileMd)}\\n</candidate_search_profile>\\n\\n<candidate_resume>\\n${stripHtmlComments(resumeMd)}\\n</candidate_resume>\\n\\n<job>\\nCompany: ${job.company}\\nTitle: ${job.title}\\nLocation: ${job.location || 'not stated'}\\nWorkplace: ${job.workplaceType || (job.remote ? 'remote' : 'not stated')}\\nSalary: ${job.salary || 'not stated'}\\nSource: ${job.sourceLabel}\\nTarget/dream company: ${job.dream ? 'yes' : 'no'}\\n\\n${truncate(job.description, 9000)}\\n</job>\\n\\nAssess this posting with the job_fit tool.`;\n  return {\n    model: model || 'claude-haiku-5-5',\n    max_tokens: 1200,\n    system,\n    tools: [scoreTool()],\n    tool_choice: { type: 'tool', name: 'job_fit' },\n    messages: [{ role: 'user', content: user }],\n  };\n}\n\nfunction tailorTool() { return {\n  name: 'tailored_application',\n  description: 'Tailored resume (markdown) + cover letter slot values + review notes for the candidate.',\n  input_schema: {\n    type: 'object',\n    properties: {\n      resume_md: { type: 'string', description: 'The FULL tailored resume in the same markdown structure as the base resume: same \"#\" name line, same contact line, same \"##\" section headings in the same order, same roles and dates. You may change the headline, the summary, the stat line, the order of bullets, reword bullets to mirror the posting\\'s vocabulary where literally true, swap in facts and stories from the experience inventory that fit this job better, and drop bullets that don\\'t matter here. Keep it to the same length or shorter. Never add a number, tool, skill, employer, title or claim that is not in the base resume or the experience inventory.' },\n      hiring_team: { type: 'string', description: 'Salutation target, e.g. \"n8n Hiring Team\" or the named hiring manager.' },\n      why_company: { type: 'string', description: 'The {{WHY_COMPANY}} paragraph: 2-3 sentences in the candidate\\'s plain, direct first-person voice, concrete to THIS company and role, built only from the posting text and facts in their files (e.g. the market they sell into, their buyer, the motion described). No generic praise, no numbers, no superlatives, no \"I am excited\".' },\n      location_line: { type: 'string', description: 'Exactly one of the LOCATION_LINE options listed in the base cover letter, the one that fits the posting.' },\n      variant: { type: 'string', description: 'Which angle of the candidate you led with, in a few words.' },\n      role_summary: { type: 'string', description: '3-4 sentences: what the job really is (segment, motion, territory, quota signals, team).' },\n      changes: { type: 'array', items: { type: 'string' }, maxItems: 6, description: 'What you changed vs the base resume and why.' },\n      verify: { type: 'array', items: { type: 'string' }, maxItems: 5, description: 'Specific things the candidate must double-check before submitting (reworded claims, emphasis that could be read as overstating, posting requirements he may not meet).' },\n      intro_call_prep: { type: 'array', items: { type: 'string' }, maxItems: 4, description: 'Likely screening questions for this role and which of his real stories answers each.' },\n      outreach_note: { type: 'string', description: 'LinkedIn connection note (max 250 characters) to the recruiter or hiring manager, in the candidate\\'s voice, referencing the role. No flattery.' },\n      team_search: { type: 'string', description: 'A LinkedIn people-search phrase to find the hiring manager / team lead for this role, e.g. \"n8n head of sales EMEA\".' },\n    },\n    required: ['resume_md', 'hiring_team', 'why_company', 'location_line', 'variant', 'role_summary', 'changes', 'verify', 'outreach_note', 'team_search'],\n  },\n}; }\n\nfunction tailorRequest(job, fit, resumeMd, coverMd, profileMd, inventoryMd, model) {\n  const system = `You tailor a candidate's application materials for one job. The candidate reviews everything before he submits it himself.\nHard rules:\n1. Truth over fit. Only select, reorder and reword what is in the candidate's base resume and experience inventory. Never invent or inflate numbers, tools, skills, titles, seniority or outcomes. If the posting asks for something the candidate doesn't have, leave it out and list it under \"verify\".\n2. Follow every tailoring rule written in the HTML comments of the base files — they override your judgement.\n3. Write like a sharp human, not a template: short concrete sentences, no buzzword stacking, no \"passionate\", \"thrilled\", \"dynamic\", \"results-driven\", \"leverage\", no em-dash chains.\n4. ATS: mirror the posting's exact terms only where they are literally true of the candidate's experience (e.g. \"full-cycle\", \"mid-market\", \"annual contracts\", \"discovery\").`;\n  const user = `<experience_inventory>\\n${inventoryMd ? stripHtmlComments(inventoryMd) : '(none — use the base resume only)'}\\n</experience_inventory>\\n\\n<base_resume>\\n${resumeMd}\\n</base_resume>\\n\\n<base_cover_letter>\\n${coverMd}\\n</base_cover_letter>\\n\\n<search_profile>\\n${stripHtmlComments(profileMd)}\\n</search_profile>\\n\\n<job>\\nCompany: ${job.company}\\nTitle: ${job.title}\\nLocation: ${job.location || 'not stated'} | Workplace: ${job.workplaceType || (job.remote ? 'remote' : 'not stated')} | Salary: ${job.salary || 'not stated'}\\n\\n${truncate(job.description, 12000)}\\n</job>\\n\\n<screening_notes>\\nRole family: ${fit.role_family} | Seniority fit: ${fit.seniority_fit}\\nATS keywords from the posting: ${(fit.keywords || []).join(', ')}\\nGaps found: ${(fit.gaps || []).join(' | ')}\\n</screening_notes>\\n\\nProduce the tailored application with the tailored_application tool.`;\n  return {\n    model: model || 'claude-sonnet-5-5',\n    max_tokens: 6000,\n    system,\n    tools: [tailorTool()],\n    tool_choice: { type: 'tool', name: 'tailored_application' },\n    messages: [{ role: 'user', content: user }],\n  };\n}\n\nfunction toolInput(resp) {\n  if (!resp) return null;\n  if (typeof resp === 'string') { try { resp = JSON.parse(resp); } catch (e) { return null; } }\n  const block = (resp.content || []).find((c) => c.type === 'tool_use');\n  return block ? block.input : null;\n}\n"
+      }
+    },
+    {
+      "id": "JobRadarRepl0001-0006",
+      "name": "📝 Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        -100
+      ],
+      "parameters": {
+        "jsCode": "return $input.all().map((it) => ({ json: it.json.row }));\n\n// ───── helpers (generated from src/lib — edit there and rebuild) ─────\n// ---- util.js : small shared helpers (inlined into n8n Code nodes) ----\n\nfunction decodeEntities(s) {\n  if (!s) return '';\n  let out = String(s);\n  // Greenhouse double-escapes (&amp;lt;) so decode twice\n  for (let i = 0; i < 2; i++) {\n    out = out\n      .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"')\n      .replace(/&#39;|&apos;/g, \"'\").replace(/&nbsp;/g, ' ')\n      .replace(/&#(\\d+);/g, (_, n) => String.fromCharCode(Number(n)))\n      .replace(/&amp;/g, '&');\n  }\n  return out;\n}\n\nfunction htmlToText(html) {\n  if (!html) return '';\n  return decodeEntities(String(html))\n    .replace(/<\\s*(br|\\/p|\\/div|\\/li|\\/h\\d|\\/tr)\\s*\\/?>/gi, '\\n')\n    .replace(/<\\s*li[^>]*>/gi, '\\n• ')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/[ \\t]+/g, ' ')\n    .replace(/\\n\\s*\\n\\s*\\n+/g, '\\n\\n')\n    .trim();\n}\n\nfunction escHtml(s) {\n  return String(s == null ? '' : s)\n    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n}\n\nfunction slugify(s, max) {\n  const out = String(s || '')\n    .normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');\n  return out.slice(0, max || 60);\n}\n\nfunction toIso(v) {\n  if (v === null || v === undefined || v === '') return null;\n  if (typeof v === 'number') {\n    const ms = v < 1e12 ? v * 1000 : v; // seconds vs ms\n    const d = new Date(ms);\n    return isNaN(d) ? null : d.toISOString();\n  }\n  let s = String(v).trim();\n  if (/^\\d{10,13}$/.test(s)) return toIso(Number(s));\n  if (/^\\d{4}-\\d\\d-\\d\\d \\d/.test(s)) s = s.replace(' ', 'T');\n  if (/^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d(:\\d\\d(\\.\\d+)?)?$/.test(s)) s += 'Z'; // no timezone → assume UTC\n  const d = new Date(s);\n  return isNaN(d) ? null : d.toISOString();\n}\n\nfunction hoursSince(iso, now) {\n  if (!iso) return null;\n  return ((now || Date.now()) - new Date(iso).getTime()) / 36e5;\n}\n\nfunction humanAge(iso, now) {\n  const h = hoursSince(iso, now);\n  if (h === null) return 'post time unknown';\n  if (h < 1) return Math.max(1, Math.round(h * 60)) + ' min ago';\n  if (h < 48) return Math.round(h) + ' h ago';\n  return Math.round(h / 24) + ' days ago';\n}\n\nfunction stripHtmlComments(md) {\n  return String(md || '').replace(/<!--[\\s\\S]*?-->/g, '').replace(/^\\s+/, '');\n}\n\nfunction extractHtmlComments(md) {\n  const out = [];\n  String(md || '').replace(/<!--([\\s\\S]*?)-->/g, (_, c) => { out.push(c.trim()); return ''; });\n  return out.join('\\n\\n');\n}\n\nfunction truncate(s, n) {\n  s = String(s || '');\n  return s.length > n ? s.slice(0, n) + ' …[truncated]' : s;\n}\n\nfunction jobradarDir() {\n  try { return (typeof $env !== 'undefined' && $env.JOBRADAR_DIR) || '/home/node/jobradar'; } catch (e) { return '/home/node/jobradar'; }\n}\n\nfunction envGet(k) {\n  try { return (typeof $env !== 'undefined' && $env[k]) || undefined; } catch (e) { return undefined; }\n}\n\nfunction channelsEnabled() {\n  return String(envGet('NOTIFY_CHANNELS') || 'telegram').toLowerCase().split(/[\\s,]+/).filter(Boolean);\n}\n\nfunction shortHash(s) {\n  let h = 0x811c9dc5;\n  for (const ch of String(s)) { h ^= ch.codePointAt(0); h = Math.imul(h, 0x01000193) >>> 0; }\n  return h.toString(36).toUpperCase().padStart(6, '0').slice(-6);\n}\n\nfunction fillCoverLetter(base, slots) {\n  let txt = stripHtmlComments(base);\n  for (const k of Object.keys(slots)) txt = txt.split('{{' + k + '}}').join(String(slots[k] || '').trim());\n  return txt.replace(/\\n{3,}/g, '\\n\\n').trim() + '\\n';\n}\n"
+      }
+    },
+    {
+      "id": "JobRadarRepl0001-0007",
+      "name": "🗃️ Update tracker",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1320,
+        -100
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "jobradar_jobs"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "jr_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.jr_id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": null
+        },
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "JobRadarRepl0001-0008",
+      "name": "🔔 Heads-up",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        100
+      ],
+      "parameters": {
+        "jsCode": "return $input.all().flatMap((it) => [\n  { json: { kind: 'tg_text', tg: { text: it.json.note, disable_web_page_preview: true } } },\n  { json: { kind: 'email', subject: 'JobRadar: ' + it.json.note.split('\\n')[0], text: it.json.note, html: `<pre style=\"font-family:inherit;white-space:pre-wrap\">${escHtml(it.json.note)}</pre>` } },\n]);\n\n// ───── helpers (generated from src/lib — edit there and rebuild) ─────\n// ---- util.js : small shared helpers (inlined into n8n Code nodes) ----\n\nfunction decodeEntities(s) {\n  if (!s) return '';\n  let out = String(s);\n  // Greenhouse double-escapes (&amp;lt;) so decode twice\n  for (let i = 0; i < 2; i++) {\n    out = out\n      .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"')\n      .replace(/&#39;|&apos;/g, \"'\").replace(/&nbsp;/g, ' ')\n      .replace(/&#(\\d+);/g, (_, n) => String.fromCharCode(Number(n)))\n      .replace(/&amp;/g, '&');\n  }\n  return out;\n}\n\nfunction htmlToText(html) {\n  if (!html) return '';\n  return decodeEntities(String(html))\n    .replace(/<\\s*(br|\\/p|\\/div|\\/li|\\/h\\d|\\/tr)\\s*\\/?>/gi, '\\n')\n    .replace(/<\\s*li[^>]*>/gi, '\\n• ')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/[ \\t]+/g, ' ')\n    .replace(/\\n\\s*\\n\\s*\\n+/g, '\\n\\n')\n    .trim();\n}\n\nfunction escHtml(s) {\n  return String(s == null ? '' : s)\n    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n}\n\nfunction slugify(s, max) {\n  const out = String(s || '')\n    .normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');\n  return out.slice(0, max || 60);\n}\n\nfunction toIso(v) {\n  if (v === null || v === undefined || v === '') return null;\n  if (typeof v === 'number') {\n    const ms = v < 1e12 ? v * 1000 : v; // seconds vs ms\n    const d = new Date(ms);\n    return isNaN(d) ? null : d.toISOString();\n  }\n  let s = String(v).trim();\n  if (/^\\d{10,13}$/.test(s)) return toIso(Number(s));\n  if (/^\\d{4}-\\d\\d-\\d\\d \\d/.test(s)) s = s.replace(' ', 'T');\n  if (/^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d(:\\d\\d(\\.\\d+)?)?$/.test(s)) s += 'Z'; // no timezone → assume UTC\n  const d = new Date(s);\n  return isNaN(d) ? null : d.toISOString();\n}\n\nfunction hoursSince(iso, now) {\n  if (!iso) return null;\n  return ((now || Date.now()) - new Date(iso).getTime()) / 36e5;\n}\n\nfunction humanAge(iso, now) {\n  const h = hoursSince(iso, now);\n  if (h === null) return 'post time unknown';\n  if (h < 1) return Math.max(1, Math.round(h * 60)) + ' min ago';\n  if (h < 48) return Math.round(h) + ' h ago';\n  return Math.round(h / 24) + ' days ago';\n}\n\nfunction stripHtmlComments(md) {\n  return String(md || '').replace(/<!--[\\s\\S]*?-->/g, '').replace(/^\\s+/, '');\n}\n\nfunction extractHtmlComments(md) {\n  const out = [];\n  String(md || '').replace(/<!--([\\s\\S]*?)-->/g, (_, c) => { out.push(c.trim()); return ''; });\n  return out.join('\\n\\n');\n}\n\nfunction truncate(s, n) {\n  s = String(s || '');\n  return s.length > n ? s.slice(0, n) + ' …[truncated]' : s;\n}\n\nfunction jobradarDir() {\n  try { return (typeof $env !== 'undefined' && $env.JOBRADAR_DIR) || '/home/node/jobradar'; } catch (e) { return '/home/node/jobradar'; }\n}\n\nfunction envGet(k) {\n  try { return (typeof $env !== 'undefined' && $env[k]) || undefined; } catch (e) { return undefined; }\n}\n\nfunction channelsEnabled() {\n  return String(envGet('NOTIFY_CHANNELS') || 'telegram').toLowerCase().split(/[\\s,]+/).filter(Boolean);\n}\n\nfunction shortHash(s) {\n  let h = 0x811c9dc5;\n  for (const ch of String(s)) { h ^= ch.codePointAt(0); h = Math.imul(h, 0x01000193) >>> 0; }\n  return h.toString(36).toUpperCase().padStart(6, '0').slice(-6);\n}\n\nfunction fillCoverLetter(base, slots) {\n  let txt = stripHtmlComments(base);\n  for (const k of Object.keys(slots)) txt = txt.split('{{' + k + '}}').join(String(slots[k] || '').trim());\n  return txt.replace(/\\n{3,}/g, '\\n\\n').trim() + '\\n';\n}\n"
+      }
+    },
+    {
+      "id": "JobRadarRepl0001-0009",
+      "name": "📨 Send",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1320,
+        100
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "JobRadarSend0001"
+        },
+        "mode": "once",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "📨 New inbox mail": {
+      "main": [
+        [
+          {
+            "node": "🗃️ Applications",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🗃️ Applications": {
+      "main": [
+        [
+          {
+            "node": "🔍 Plausible replies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔍 Plausible replies": {
+      "main": [
+        [
+          {
+            "node": "🤖 Classify (Claude Haiku)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🤖 Classify (Claude Haiku)": {
+      "main": [
+        [
+          {
+            "node": "🏷️ Verdicts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🏷️ Verdicts": {
+      "main": [
+        [
+          {
+            "node": "📝 Rows",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "🔔 Heads-up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📝 Rows": {
+      "main": [
+        [
+          {
+            "node": "🗃️ Update tracker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔔 Heads-up": {
+      "main": [
+        [
+          {
+            "node": "📨 Send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}

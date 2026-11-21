@@ -1,0 +1,241 @@
+#!/usr/bin/env bash
+# JobRadar — one command for everything.  ./jobradar help
+# Works with macOS bash 3.2 and Linux. Needs Docker (Desktop, OrbStack or Engine).
+set -euo pipefail
+cd "$(dirname "$0")"
+
+B=$'\033[1m'; D=$'\033[2m'; G=$'\033[32m'; Y=$'\033[33m'; R=$'\033[31m'; N=$'\033[0m'
+say()  { printf "%s\n" "$*"; }
+ok()   { printf "  ${G}✔${N} %s\n" "$*"; }
+warn() { printf "  ${Y}!${N} %s\n" "$*"; }
+die()  { printf "  ${R}✖ %s${N}\n" "$*" >&2; exit 1; }
+ask()  { local p="$1" d="${2:-}" v; read -r -p "  $p${d:+ [$d]}: " v; printf "%s" "${v:-$d}"; }
+asks() { local p="$1" v; read -r -s -p "  $p: " v; echo >&2; printf "%s" "$v"; }
+yes()  { local v; read -r -p "  $1 [${2:-y}/$( [ "${2:-y}" = y ] && echo n || echo y)]: " v; v="${v:-${2:-y}}"; [ "$v" = y ] || [ "$v" = Y ]; }
+
+WF_SEND=JobRadarSend0001; WF_RADAR=JobRadarMain0001; WF_BUTTONS=JobRadarActn0001
+WF_MAIL=JobRadarMail0001; WF_REPLIES=JobRadarRepl0001; WF_REPORTS=JobRadarRprt0001
+HOOK=http://127.0.0.1:5678/webhook
+
+env_get() { [ -f .env ] && grep -E "^$1=" .env | tail -1 | cut -d= -f2- || true; }
+env_set() { # env_set KEY VALUE  (creates .env from template if needed)
+  [ -f .env ] || cp .env.example .env
+  local k="$1" v="$2" tmp; tmp="$(mktemp)"
+  if grep -qE "^$k=" .env; then awk -v k="$k" -v v="$v" -F= 'BEGIN{OFS="="} $1==k{print k"="v; next} {print}' .env > "$tmp"; else cat .env > "$tmp"; echo "$k=$v" >> "$tmp"; fi
+  mv "$tmp" .env; chmod 600 .env
+}
+channels() { env_get NOTIFY_CHANNELS; }
+has_channel() { case ",$(channels)," in *",$1,"*) return 0;; *) return 1;; esac; }
+dc() { docker compose "$@"; }
+n8n_cli() { dc run --rm --no-deps -T n8n "$@" 2>&1 | grep -v -i -E "python task runner|deprecat|N8N_RUNNERS|N8N_COMPRESSION|N8N_UNVERIFIED|Running n8n outside|^\s*-|^$" || true; }
+node_in() { dc run --rm --no-deps -T --entrypoint node n8n "$@"; }
+
+need_docker() {
+  command -v docker >/dev/null || die "Docker isn't installed. Install Docker Desktop (https://www.docker.com/products/docker-desktop/) or OrbStack, open it, then run ./jobradar setup again."
+  docker info >/dev/null 2>&1 || die "Docker is installed but not running. Open Docker Desktop and try again."
+  docker compose version >/dev/null 2>&1 || die "Your Docker is too old (no 'docker compose'). Update Docker Desktop."
+}
+
+wait_up() {
+  local i
+  for i in $(seq 1 90); do
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$HOOK/jobradar-report?type=none" || true)
+    { [ "$code" = 200 ] || [ "$code" = 500 ]; } && return 0; sleep 2
+  done
+  return 1
+}
+
+deploy_workflows() {
+  say "${B}Installing the workflows…${N}"
+  ( umask 077; node_in /home/node/jobradar/tools/credentials.js > .credentials.tmp.json )
+  dc run --rm --no-deps -T n8n import:credentials --input=/home/node/jobradar/.credentials.tmp.json >/dev/null 2>&1 || { rm -f .credentials.tmp.json; die "Couldn't save the email credentials into n8n."; }
+  rm -f .credentials.tmp.json
+  local ids="$WF_SEND $WF_RADAR $WF_REPORTS"
+  has_channel telegram && ids="$ids $WF_BUTTONS"
+  has_channel email && ids="$ids $WF_MAIL"
+  [ "$(node_in -e 'try{console.log(require("/home/node/jobradar/settings.json").replyDetection.enabled?1:0)}catch(e){console.log(0)}')" = 1 ] && has_channel email && ids="$ids $WF_REPLIES"
+  for id in $WF_SEND $WF_RADAR $WF_BUTTONS $WF_MAIL $WF_REPLIES $WF_REPORTS; do n8n_cli unpublish:workflow --id=$id >/dev/null; done
+  n8n_cli import:workflow --separate --input=/home/node/jobradar/workflows >/dev/null
+  for id in $ids; do n8n_cli publish:workflow --id=$id >/dev/null; done
+  ok "workflows installed and switched on ($(echo $ids | wc -w | tr -d ' '))"
+}
+
+# ───────────────────────────── setup ─────────────────────────────
+setup_claude() {
+  say ""; say "${B}1 · Claude API key${N}  ${D}(console.anthropic.com → API keys; add ~\$10 credit. The Claude app subscription doesn't include API use.)${N}"
+  local k cur; cur="$(env_get ANTHROPIC_API_KEY)"
+  while :; do
+    if [ -n "$cur" ] && yes "Keep the key already saved (…${cur: -4})?"; then k="$cur"; else k="$(asks 'Paste your key (sk-ant-…)')"; fi
+    code=$(curl -s -o /dev/null -w "%{http_code}" https://api.anthropic.com/v1/models -H "x-api-key: $k" -H "anthropic-version: 2023-06-01" || true)
+    if [ "$code" = 200 ]; then ok "key works"; env_set ANTHROPIC_API_KEY "$k"; break; fi
+    warn "That key didn't work (HTTP $code). Try again."; cur=""
+  done
+}
+
+setup_telegram() {
+  say ""; say "${B}Telegram${N}  ${D}In Telegram: open @BotFather → /newbot → pick any name → copy the token.${N}"
+  local t cur me name chat i; cur="$(env_get TELEGRAM_BOT_TOKEN)"
+  while :; do
+    if [ -n "$cur" ] && yes "Keep the bot already saved?"; then t="$cur"; else t="$(asks 'Paste the bot token')"; fi
+    me="$(curl -s "https://api.telegram.org/bot$t/getMe" || true)"
+    name="$(printf "%s" "$me" | sed -n 's/.*"username":"\([^"]*\)".*/\1/p')"
+    [ -n "$name" ] && { ok "bot @$name found"; env_set TELEGRAM_BOT_TOKEN "$t"; break; }
+    warn "Telegram didn't accept that token."; cur=""
+  done
+  chat="$(env_get TELEGRAM_CHAT_ID)"
+  if [ -z "$chat" ] || ! yes "Keep chat id $chat?"; then
+    say "  Now open ${B}t.me/$name${N} and press Start (or send it any message). Waiting…"
+    for i in $(seq 1 60); do
+      chat="$(curl -s "https://api.telegram.org/bot$t/getUpdates" | grep -o '"chat":{"id":-\{0,1\}[0-9]*' | tail -1 | grep -o -- '-\{0,1\}[0-9]*$' || true)"
+      [ -n "$chat" ] && break; sleep 2
+    done
+    [ -n "$chat" ] || die "No message arrived. Send your bot a message and run ./jobradar setup again."
+    env_set TELEGRAM_CHAT_ID "$chat"; ok "found your chat ($chat)"
+  fi
+  curl -s -o /dev/null "https://api.telegram.org/bot$t/sendMessage" --data-urlencode "chat_id=$chat" --data-urlencode "text=👋 JobRadar is connected. Job matches will arrive here." && ok "test message sent — check Telegram"
+}
+
+setup_email() {
+  say ""; say "${B}Email${N}  ${D}JobRadar sends from and reads your own mailbox (SMTP + IMAP).${N}"
+  local addr prov pw to
+  addr="$(ask 'Your email address' "$(env_get SMTP_USER)")"
+  case "$addr" in
+    *@gmail.com|*@googlemail.com) prov=gmail;;
+    *@outlook.com|*@hotmail.com|*@live.com) prov=outlook;;
+    *@icloud.com|*@me.com) prov=icloud;;
+    *) prov=other;;
+  esac
+  case $prov in
+    gmail) env_set SMTP_HOST smtp.gmail.com; env_set SMTP_PORT 465; env_set SMTP_SECURE true; env_set IMAP_HOST imap.gmail.com; env_set IMAP_PORT 993
+      say "  ${D}Gmail needs an app password: myaccount.google.com/apppasswords (2-step verification must be on).${N}";;
+    outlook) env_set SMTP_HOST smtp-mail.outlook.com; env_set SMTP_PORT 587; env_set SMTP_SECURE false; env_set IMAP_HOST outlook.office365.com; env_set IMAP_PORT 993
+      say "  ${D}Outlook: use an app password if you have 2-step verification on.${N}";;
+    icloud) env_set SMTP_HOST smtp.mail.me.com; env_set SMTP_PORT 587; env_set SMTP_SECURE false; env_set IMAP_HOST imap.mail.me.com; env_set IMAP_PORT 993
+      say "  ${D}iCloud: create an app-specific password at account.apple.com.${N}";;
+    other) env_set SMTP_HOST "$(ask 'SMTP server' "$(env_get SMTP_HOST)")"; env_set SMTP_PORT "$(ask 'SMTP port' 465)"; env_set SMTP_SECURE "$(ask 'SSL on connect? (true for 465, false for 587)' true)"
+      env_set IMAP_HOST "$(ask 'IMAP server' "$(env_get IMAP_HOST)")"; env_set IMAP_PORT "$(ask 'IMAP port' 993)";;
+  esac
+  pw="$(asks 'App password')"
+  env_set SMTP_USER "$addr"; env_set SMTP_PASS "$pw"
+  local local_part="${addr%@*}" domain="${addr#*@}"
+  case $prov in gmail|outlook) to="${local_part}+jobradar@${domain}";; *) to="$addr";; esac
+  to="$(ask 'Send JobRadar emails to' "$to")"; env_set NOTIFY_EMAIL_TO "$to"; env_set IMAP_FOLDER JobRadar
+  cat > gmail-filter.xml <<XML
+<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns='http://www.w3.org/2005/Atom' xmlns:apps='http://schemas.google.com/apps/2006'>
+  <title>Mail Filters</title>
+  <entry>
+    <category term='filter'></category><title>JobRadar</title><content></content>
+    <apps:property name='to' value='$to'/>
+    <apps:property name='label' value='JobRadar'/>
+    <apps:property name='shouldArchive' value='true'/>
+    <apps:property name='sizeOperator' value='s_sl'/><apps:property name='sizeUnit' value='s_smb'/>
+  </entry>
+</feed>
+XML
+  say ""
+  say "  ${B}Keep your inbox clean — one-time step:${N}"
+  case $prov in
+    gmail) say "  Gmail → ⚙ Settings → See all settings → Filters and Blocked Addresses → ${B}Import filters${N} → choose ${B}gmail-filter.xml${N} (in this folder) → Create filters."
+           say "  Then in the Gmail app: Settings → your account → Manage labels → JobRadar → Label notifications ${B}on${N}, so matches still ping your phone.";;
+    outlook) say "  Outlook → Settings → Mail → Rules → Add rule: 'Sent to $to' → Move to folder ${B}JobRadar${N} (create it).";;
+    *) say "  Create a folder ${B}JobRadar${N} and a rule that moves mail sent to $to into it.";;
+  esac
+  read -r -p "  Press Enter when done (or now, and do it later)… " _
+}
+
+setup_candidate() {
+  say ""; say "${B}3 · Your profile${N}"
+  local need=0 f
+  for f in resume_base.md cover_letter_base.md search_profile.md; do [ -f "candidate/$f" ] || need=1; done
+  if [ $need = 0 ]; then ok "candidate/ files found"; [ -f candidate/experience_inventory.md ] || warn "no candidate/experience_inventory.md yet — tailoring works, but the interview makes it much better (see onboarding/README.md)"; return; fi
+  say "  JobRadar needs your resume, cover letter and search profile in ${B}candidate/${N}."
+  say "  The easiest way: the 30-minute interview in ${B}onboarding/README.md${N} (works in the Claude app, voice is fine). It writes all four files."
+  if yes "Use the example profile (a fictional engineer) for now, so you can see it work?" n; then
+    mkdir -p candidate; cp -n examples/candidate/*.md candidate/; ok "example files copied into candidate/ — replace them after the interview"
+  else die "Do the interview, put the files in candidate/, then run ./jobradar setup again."; fi
+}
+
+setup_companies() {
+  say ""; say "${B}4 · Companies to watch${N}  ${D}Paste career-page links one per line, end with an empty line. Add * at the end for a dream company.${N}"
+  [ -f settings.json ] || { cp settings.example.json settings.json; ok "created settings.json from the example"; }
+  say "  Watching now:"; node_in /home/node/jobradar/tools/settings-tool.js list-companies < settings.json || true
+  local urls=() u
+  while read -r -p "  link: " u && [ -n "$u" ]; do urls+=("$u"); done
+  if [ ${#urls[@]} -gt 0 ]; then
+    node_in /home/node/jobradar/tools/settings-tool.js add-companies "${urls[@]}" < settings.json > settings.json.new && mv settings.json.new settings.json
+  fi
+}
+
+cmd_setup() {
+  say "${B}JobRadar setup${N}  ${D}(safe to run again any time)${N}"
+  need_docker
+  [ -f .env ] || cp .env.example .env; chmod 600 .env
+  env_set TIMEZONE "$(ask 'Your time zone' "$( [ "$(env_get TIMEZONE)" != UTC ] && env_get TIMEZONE || (readlink /etc/localtime 2>/dev/null | sed 's#.*/zoneinfo/##') || echo UTC)")"
+  setup_claude
+  say ""; say "${B}2 · Notifications${N}"
+  say "   1) Telegram   2) Email   3) Both"
+  local c; c="$(ask 'Choose' "$(case "$(channels)" in telegram) echo 1;; email) echo 2;; *email*) echo 3;; *) echo 1;; esac)")"
+  case "$c" in 2) env_set NOTIFY_CHANNELS email;; 3) env_set NOTIFY_CHANNELS telegram,email;; *) env_set NOTIFY_CHANNELS telegram;; esac
+  has_channel telegram && setup_telegram
+  has_channel email && setup_email
+  say ""; say "${B}Building and starting (first time: a few minutes)…${N}"
+  dc pull --quiet n8n gotenberg; dc build --quiet renderer
+  setup_candidate
+  setup_companies
+  dc stop n8n >/dev/null 2>&1 || true
+  deploy_workflows
+  dc up -d >/dev/null; wait_up || die "n8n didn't start. Run ./jobradar logs to see why."
+  ok "running"
+  say ""; say "${B}Looking for your first matches now${N} (best 3 from the last 7 days)…"
+  (curl -s -m 900 -X POST "$HOOK/jobradar-run" >/dev/null 2>&1 &)
+  say ""
+  say "${G}${B}All set.${N} New matches arrive within ~15 minutes of being published, while Docker is running."
+  say "  • Change what you get:   ${B}settings.json${N} and ${B}candidate/${N} (applies on the next run)"
+  say "  • Your files per job:    ${B}output/${N}"
+  say "  • See it in n8n:         ${B}http://localhost:5678${N} (create a local login on first visit)"
+  say "  • Everything else:       ${B}./jobradar help${N}"
+}
+
+# ───────────────────────────── everyday commands ─────────────────────────────
+cmd_run()      { need_docker; say "Checking job boards now…"; curl -s -m 900 -X POST "$HOOK/jobradar-run" -o /dev/null -w "done (HTTP %{http_code})\n"; }
+cmd_report()   { need_docker; curl -s -m 300 -X POST "$HOOK/jobradar-report?type=${1:-weekly}" -o /dev/null -w "report sent (HTTP %{http_code})\n"; }
+cmd_start()    { need_docker; dc up -d; wait_up && ok "running"; }
+cmd_stop()     { need_docker; dc stop; ok "stopped"; }
+cmd_restart()  { need_docker; dc up -d --force-recreate n8n renderer >/dev/null; wait_up && ok "restarted (settings and .env reloaded)"; }
+cmd_logs()     { dc logs --tail=100 -f "${1:-n8n}"; }
+cmd_status()   {
+  need_docker; dc ps
+  say ""; say "Channels: $(channels)  ·  time zone: $(env_get TIMEZONE)"
+  [ -f settings.json ] && { say "Companies:"; node_in /home/node/jobradar/tools/settings-tool.js list-companies < settings.json; }
+  say "Latest job folders:"; ls -1t output 2>/dev/null | head -5 | sed 's/^/  /'
+}
+cmd_update()   {
+  need_docker
+  [ -d .git ] && { git pull --ff-only || die "git pull failed — resolve it, then run ./jobradar update again"; }
+  dc pull --quiet n8n gotenberg; dc build --quiet renderer; dc stop n8n >/dev/null 2>&1 || true
+  deploy_workflows; dc up -d >/dev/null; wait_up && ok "updated — your tracker and settings were kept"
+}
+cmd_rerender() { need_docker; [ $# -ge 1 ] || { say "usage: ./jobradar rerender <job folder in output/>"; ls -1t output | head -10 | sed 's/^/  /'; exit 1; }; dc exec -T renderer node rerender.js "$(basename "$1")"; }
+cmd_companies(){ need_docker; setup_companies; say "Applies on the next run."; }
+cmd_help() { cat <<EOF
+${B}JobRadar${N} — finds jobs minutes after they're posted, tailors your files, notifies you. You apply.
+
+  ./jobradar setup        first-time setup (safe to re-run to change anything)
+  ./jobradar run          check the job boards right now
+  ./jobradar companies    add companies to watch (paste career-page links)
+  ./jobradar rerender X   rebuild the Word/PDF files after editing output/X/*.md
+  ./jobradar report       send the weekly report now (or: report monthly)
+  ./jobradar status       what's running, which companies, latest jobs
+  ./jobradar start|stop|restart|logs
+  ./jobradar update       get the latest version (keeps your data)
+
+Your files: candidate/ (who you are) · settings.json (what to find, how to notify) · .env (keys)
+EOF
+}
+
+case "${1:-help}" in
+  setup) cmd_setup;; run) cmd_run;; report) shift; cmd_report "$@";; start) cmd_start;; stop) cmd_stop;; restart) cmd_restart;;
+  logs) shift; cmd_logs "$@";; status) cmd_status;; update) cmd_update;; rerender) shift; cmd_rerender "$@";; companies) cmd_companies;;
+  *) cmd_help;;
+esac
