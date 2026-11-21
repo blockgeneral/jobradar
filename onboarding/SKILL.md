@@ -30,12 +30,13 @@ The person may be talking by voice. Keep every turn short and conversational.
    - Two or three stories: the situation, what they did, the result (with numbers they can stand behind).
    - Tools and methods they used for real.
    - Anything they did that isn't on their CV.
-4. **Across the career.** Strongest skills (with proof), the story they'd tell a hiring manager first, how others would describe them, what they want to learn next.
-5. **Positioning by role type.** For each kind of role they target (2–4, e.g. "new-business AE", "account manager", "partnerships"), agree what to lead with, the best proof, and what to play down.
-6. **Gaps and never-claim list.** Skills or experiences they lack for target roles; things that must never appear (tools they only touched in a course, titles they didn't hold, programmes they didn't build).
-7. **Their voice.** Ask them to talk for a minute about who they are and what they want next, as if to a hiring manager. Note the phrasing. This becomes the cover letter body.
-8. **Companies.** Dream companies and good-fit companies. Ask for the careers-page links (or look them up together). Mark dream ones.
-9. **Read-back.** Summarise the key facts and every number. Fix anything they correct.
+4. **What they value in a company.** Ask what made their best job good and their worst job bad, then turn it into a ranked list of 5–8 values in their words (e.g. remote-first and async, mission they can stand behind, product quality, learning from people better than them, transparent pay and quota attainment, clear promotion paths, physical-world impact). Ask which are deal-breakers and which are nice-to-haves. Then ask for companies they admire and why — those reasons often reveal values they didn't list.
+5. **Across the career.** Strongest skills (with proof), the story they'd tell a hiring manager first, how others would describe them, what they want to learn next.
+6. **Positioning by role type.** For each kind of role they target (2–4, e.g. "new-business AE", "account manager", "partnerships"), agree what to lead with, the best proof, and what to play down.
+7. **Gaps and never-claim list.** Skills or experiences they lack for target roles; things that must never appear (tools they only touched in a course, titles they didn't hold, programmes they didn't build).
+8. **Their voice.** Ask them to talk for a minute about who they are and what they want next, as if to a hiring manager. Note the phrasing. This becomes the cover letter body.
+9. **Companies.** Two kinds of people come here: some know exactly where they want to work, others are open to anything that fits. Ask which they are. Collect dream and good-fit companies with careers-page links (or look them up together); companies whose job board isn't supported can be watched by name. If they don't have a list, suggest 5–10 companies that match their values and skills (say why each fits) and let them pick — JobRadar will also suggest more over time from the roles it finds.
+10. **Read-back.** Summarise the key facts and every number. Fix anything they correct.
 
 ## Output: write these files
 
@@ -133,13 +134,13 @@ Plain English, short. The screener reads it for every job, so keep it under 300 
 - Pay: <floor, currency, base/OTE; "only reject when a stated range is clearly below">
 # Roles I want (best first)
 # Seniority
-# What makes a company better for me
+# What I value in a company (most important first; mark deal-breakers)
 # Red flags
 ```
 
 ### `settings.json` (only the parts that depend on the person)
 Give a JSON snippet to merge into JobRadar's `settings.json`:
-- `companies`: careers-page links, `{ "url": "...", "dream": true }` for dream companies.
+- `companies`: careers-page links, `{ "url": "...", "dream": true }` for dream companies, or `{ "name": "...", "dream": true }` to watch a company by name on every job board when its own careers page isn't supported.
 - `boardQueries`: 2–4 search phrases for their role.
 - `boards`: the right categories for their field (We Work Remotely category slug, Remotive category, RemoteOK tag).
 - `filters.titleInclude` / `titleExclude` / `titleIncludeDream` / `titleExcludeDream`: lowercase regex fragments for job titles to keep or drop. `languageExclude`: phrases that mean a language they don't speak is required.

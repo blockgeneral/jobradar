@@ -2,7 +2,7 @@
 
 **Be one of the first applicants, with an application that's actually yours.**
 
-Most roles get 100+ applications within hours, and recruiters read the first few dozen. JobRadar checks the career pages of companies you care about every 15 minutes, screens each new role against what *you* want, tailors your resume and cover letter from your own material, checks the AI didn't invent anything, and sends you one tidy notification with the files and an Apply button.
+Most roles get 100+ applications within hours, and recruiters read the first few dozen. JobRadar checks the career pages of companies you care about (and the big remote job boards) every 15 minutes, screens each new role against your skills *and* what you value in a company, tailors your resume and cover letter from your own material, checks the AI didn't invent anything, and sends you one tidy notification with the files and an Apply button.
 
 **You always apply yourself.** JobRadar never submits anything, never logs into job sites, never scrapes LinkedIn.
 
@@ -11,8 +11,9 @@ Built with [n8n](https://n8n.io) and [Claude](https://claude.ai). Free and open 
 ```
 🎯 Mid-Market Account Executive (EMEA)
 🏢 n8n ⭐ · 📍 Remote - EMEA
-📊 87/100 · 💶 €130K – €160K OTE · 🕒 22 min ago
+📊 87/100 (skills 85 · values 80) · 💶 €130K – €160K OTE · 🕒 22 min ago
 ✨ Full-cycle AE on a technical product, annual contracts
+💚 remote-first: "work from anywhere"
 
 ⚠️ Check before sending
 • MEDDPICC is required — your resume doesn't claim it
@@ -51,7 +52,7 @@ The CV import gets you started; the interview makes it yours. JobRadar can only 
 | `experience_inventory.md` | Everything true about your work, in detail, plus what to lead with for each type of role you target. The tailoring step may use any fact here — and nothing else. |
 | `resume_base.md` | Your master resume. |
 | `cover_letter_base.md` | Your letter in your voice. Only three slots change per job; the rest stays word for word. |
-| `search_profile.md` | Your must-haves (where you can work, languages, minimum pay) and preferences. |
+| `search_profile.md` | Your must-haves (where you can work, languages, minimum pay), the roles you want, and **what you value in a company**, ranked. |
 
 ## Every day
 
@@ -70,7 +71,8 @@ JobRadar sends to your plus-address (`you+jobradar@gmail.com`). The setup writes
 
 Everything about *what* to find and *how* to notify lives in one file. Highlights (full reference: [docs/SETTINGS.md](docs/SETTINGS.md)):
 
-- `companies` — paste career-page links (`https://jobs.ashbyhq.com/n8n`). Add `"dream": true` for a lower bar. Or run `./jobradar companies`.
+- `companies` — career-page links (`https://jobs.ashbyhq.com/n8n`), or just a name (`{ "name": "PetsApp" }`) to spot a company on every job board when its own careers page isn't supported. `"dream": true` = lower bar, every non-excluded role gets screened, always tailored. Or run `./jobradar companies`.
+- `scoring.minSkillsFit` / `minValuesFit` / `instantAt` — a role appears when both skills and values fit are ≥ 50; ≥ 75 (or a dream company) gets tailored files right away, the rest go into one daily "worth a look" list.
 - `notifications.style` — `compact` (default) or `detailed`.
 - `notifications.files` — `["docx"]`, `["pdf"]` or both.
 - `notifications.delivery` — `instant` (default) or `digest` (one summary a day).
@@ -87,18 +89,20 @@ Changes apply on the next run. Keys and channels live in `.env` (`./jobradar set
 
 | Source | How | Speed |
 |---|---|---|
-| Company career pages on Ashby, Greenhouse, Lever, Workable, Recruitee, Personio, SmartRecruiters | their public job-board feeds | minutes after publishing |
+| Company career pages on Ashby, Greenhouse, Lever, Workable, Recruitee, Personio, SmartRecruiters, Pinpoint | their public job-board feeds | minutes after publishing |
+| Companies without a supported careers page | watched by name across every board below | as fast as the board |
 | We Work Remotely, Remotive, RemoteOK, Jobicy, Himalayas | public feeds | minutes to hours |
 | Hiring Cafe | the community [Hiring Cafe MCP server](https://hiringcafe-mcp.vercel.app/) (unofficial), or an Apify task | hourly |
-| LinkedIn | **not used** — scraping it breaks LinkedIn's terms. Keep your own LinkedIn alerts on. |
+| LinkedIn | **not scraped** (it breaks LinkedIn's terms). Reading your own LinkedIn alert *emails* is on the roadmap; until then keep your LinkedIn alerts on. |
 
 ## How it decides (and why you can trust the drafts)
 
 1. Rules first (titles, languages, freshness, duplicates) — no AI cost.
-2. **Claude Haiku** screens what's left against your search profile: can they hire you where you live, is it English-only, does pay clear your floor, how good a fit (0–100).
-3. **Claude Sonnet** tailors your resume and the three cover-letter slots, only from your files.
-4. **Guardrails in plain code** check the result: any number not in your files, anything on your never-claim list, a missing section or changed contact details → a ⚠️ line on the card.
-5. If Claude is down or out of credit, you still get the job, marked as not screened, with your base files.
+2. **Claude Haiku** screens what's left against your search profile: can they hire you where you live, is it English-only, does pay clear your floor — then two scores: **skills fit** and **values fit** (how well the company matches what you said you value).
+3. Both ≥ 50 → it appears. Strong matches (≥ 75) and dream companies get **Claude Sonnet** tailoring right away; the rest land in one daily **"worth a look"** list, so you see everything plausible without a dozen pings a day.
+4. **Discovery:** companies that keep matching your values but aren't on your list show up in your Monday report with a ➕ button. One tap and their roles get priority.
+5. **Guardrails in plain code** check the result: any number not in your files, anything on your never-claim list, a missing section or changed contact details → a ⚠️ line on the card.
+6. If Claude is down or out of credit, you still get the job, marked as not screened, with your base files.
 
 ## Commands
 
@@ -114,7 +118,7 @@ Changes apply on the next run. Keys and channels live in `.env` (`./jobradar set
 ./jobradar start | stop | restart | logs
 ```
 
-Inside n8n (http://localhost:5678) you'll find six workflows and a **jobradar_jobs** table — your application tracker, viewable and editable there.
+Inside n8n (http://localhost:5678) you'll find six workflows and two tables: **jobradar_jobs** (your application tracker) and **jobradar_watch** (companies you added with ➕), both viewable and editable there.
 
 ## Running 24/7
 

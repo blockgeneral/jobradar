@@ -84,8 +84,9 @@
     "locationExclude": []
   },
   "scoring": {
-    "threshold": 70,
-    "dreamThreshold": 60,
+    "minSkillsFit": 50,
+    "minValuesFit": 50,
+    "instantAt": 75,
     "maxScoredPerRun": 40,
     "maxTailoredPerRun": 4
   },

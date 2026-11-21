@@ -22,7 +22,7 @@ export ANTHROPIC_BASE_URL=$FAKE_API TELEGRAM_API_BASE=$FAKE_API JOBRADAR_HOOK=ht
 # CV path (drag-and-drop style) · roles · location · pay · companies (2 links + 1 bad) · empty line ends the list
 ESCAPED_CV="$(printf '%s' "$S/My CV.pdf" | sed 's/ /\\ /g') "
 cd "$W"
-printf '%s\n' "Europe/Vienna" "wrong-key" "test-key" "1" "123:abc" "1" "$ESCAPED_CV" "Backend engineer" "Lisbon; remote EU" "75k EUR" \
+printf '%s\n' "Europe/Vienna" "wrong-key" "test-key" "1" "123:abc" "1" "$ESCAPED_CV" "Backend engineer" "Lisbon; remote EU" "75k EUR" "remote-first, strong engineering culture" \
   "https://jobs.ashbyhq.com/supabase*" "https://job-boards.greenhouse.io/anthropic" "https://example.com/careers" "" \
   | ./jobradar setup 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | tee "$S/setup.out"
 echo; echo "──── checks"

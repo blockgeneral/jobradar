@@ -3,7 +3,7 @@
 const fs = require('fs'); const path = require('path'); const assert = require('assert');
 const ROOT = path.join(__dirname, '..');
 const libSrc = ['util', 'sources', 'prompts', 'guard', 'notify'].map((n) => fs.readFileSync(path.join(ROOT, 'src/lib', n + '.js'), 'utf8')).join('\n');
-const L = new Function('$env', libSrc + '; return { normalize, preFilter, checkTailoring, keywordCoverage, toIso, detectAts, companiesFromSettings, buildRequests, parseBody, telegramCard, emailForJob, computeReport, telegramReport, inQuietHours, shortHash, fillCoverLetter };')({ NOTIFY_CHANNELS: 'telegram,email' });
+const L = new Function('$env', libSrc + '; return { normalize, watchList, normName, preFilter, checkTailoring, keywordCoverage, toIso, detectAts, companiesFromSettings, buildRequests, parseBody, telegramCard, emailForJob, computeReport, telegramReport, inQuietHours, shortHash, fillCoverLetter };')({ NOTIFY_CHANNELS: 'telegram,email' });
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('  ✔ ' + name); };
 const now = Date.now();
 
@@ -33,6 +33,14 @@ async function runNode(code, { input = [], nodes = {}, env = {}, state = {} }) {
     assert.equal(j.length, 1); assert.equal(j[0].company, 'Co'); assert.equal(j[0].remote, true);
     const structured = JSON.stringify({ jsonrpc: '2.0', id: 1, result: { structuredContent: { results: [{ title: 'AM', companyName: 'B', apply_url: 'https://b/apply' }] } } });
     assert.equal(L.normalize({ source: 'hiringcafe_mcp' }, structured)[0].applyUrl, 'https://b/apply');
+  });
+  t('Pinpoint (SafetyWing) + watch-by-name', () => {
+    assert.deepEqual(L.detectAts('https://safetywing.pinpointhq.com/en/postings/x'), { ats: 'pinpoint', slug: 'safetywing' });
+    const j = L.normalize({ source: 'pinpoint', slug: 'safetywing', company: 'SafetyWing', dream: true }, JSON.stringify({ data: [{ id: 'p1', title: 'Platform Business Partner', url: 'https://u', workplace_type: 'remote', location: { name: 'Remote' }, description: '<p>UTC+0 to UTC+6</p>', compensation_visible: true, compensation_minimum: 90000, compensation_maximum: 120000, compensation_currency: 'USD', compensation_frequency: 'year' }] }));
+    assert.equal(j[0].remote, true); assert.equal(j[0].postedAt, null); assert.equal(j[0].salary, 'USD 90000-120000 year');
+    const w = L.watchList({ companies: [{ name: 'PetsApp', dream: true }, 'https://jobs.ashbyhq.com/n8n', { name: 'Deel', aliases: ['Deel Inc'] }] }, [{ name: 'Oyster', dream: true }]);
+    assert.ok(w[L.normName('PetsApp')].dream); assert.ok(w[L.normName('n8n')]); assert.ok(w[L.normName('Deel Inc.')]); assert.ok(w[L.normName('oyster')]);
+    assert.equal(L.companiesFromSettings({ companies: [{ name: 'PetsApp' }] }).companies.length, 0);
   });
   t('Recruitee / Personio / SmartRecruiters / Lever / Himalayas / Jobicy adapters', () => {
     let j = L.normalize({ source: 'recruitee', slug: 'acme', company: 'Acme' }, JSON.stringify({ offers: [{ id: 9, title: 'Account Executive', location: 'Vienna', country: 'Austria', remote: true, careers_url: 'u', careers_apply_url: 'a', published_at: '2026-11-21 08:00:00 UTC', description: '<p>x</p>' }] }));
@@ -142,9 +150,9 @@ async function runNode(code, { input = [], nodes = {}, env = {}, state = {} }) {
   });
   const verdicts = await runNode(OTH.replies_apply, { input: [{ content: [{ type: 'tool_use', input: { jr_id: 'JR-AAAAAA', outcome: 'intro', summary: 'n8n wants a call' } }] }], nodes: { '🔍 Plausible replies': pre.map((x) => x.json) } });
   t('reply verdict → tracker row + heads-up', () => { assert.equal(verdicts[0].json.row.outcome, 'intro'); assert.ok(verdicts[0].json.note.includes('📞')); });
-  const dig = await runNode(OTH.reports_build, { env: { NOTIFY_CHANNELS: 'email', NOTIFY_EMAIL_TO: 'me+jobradar@x.com' },
-    input: [{ jr_id: 'JR-1', status: 'digest_pending', score: 80, company: 'A', title: 'AE', apply_url: 'https://a' }, { jr_id: 'JR-2', status: 'notified', score: 90 }],
-    nodes: { "⏰ What's due": [{ due: 'digest', reports: {} }] } });
+  const dig = await runNode(OTH.reports_build, { env: { NOTIFY_CHANNELS: 'email', NOTIFY_EMAIL_TO: 'me+jobradar@x.com' }, input: [],
+    nodes: { '🗃️ Tracker': [{ jr_id: 'JR-1', status: 'digest_pending', score: 70, skills_fit: 70, values_fit: 60, company: 'A', title: 'AE', apply_url: 'https://a' }, { jr_id: 'JR-2', status: 'notified', score: 90 }],
+      "⏰ What's due": [{ due: 'digest', reports: {}, settings: {} }] } });
   t('digest: one email + marks pending rows as sent', () => {
     assert.equal(dig.filter((x) => x.json.kind === 'email').length, 1); assert.deepEqual(dig.filter((x) => x.json.kind === 'row_update').map((x) => x.json.row), [{ jr_id: 'JR-1', status: 'notified' }]);
   });
@@ -155,6 +163,24 @@ async function runNode(code, { input = [], nodes = {}, env = {}, state = {} }) {
     assert.equal(presses[0].json.set.outcome, 'offer'); assert.equal(st.offset, 6);
     assert.ok(JSON.stringify(presses[0].json.tgCalls[1].body.reply_markup).includes('🎉 offer'));
   });
+  const wk = await runNode(OTH.reports_build, { env: { NOTIFY_CHANNELS: 'telegram' }, input: [{ name: 'Watched Co', dream: true }],
+    nodes: { '🗃️ Tracker': [
+      { jr_id: 'JR-3', company: 'Cool Co', values_fit: 85, notified_at: new Date().toISOString(), status: 'notified', values_note: 'async, remote-first' },
+      { jr_id: 'JR-4', company: 'Watched Co', values_fit: 90, notified_at: new Date().toISOString(), status: 'notified' },
+      { jr_id: 'JR-5', company: 'Meh Co', values_fit: 55, notified_at: new Date().toISOString(), status: 'notified' }],
+      "⏰ What's due": [{ due: 'weekly', reports: {}, settings: { companies: ['https://jobs.ashbyhq.com/n8n'] } }] } });
+  t('discovery: suggests unwatched companies with values ≥70, one-tap ➕', () => {
+    const d = wk.find((x) => x.json.tg && /might want to watch/.test(x.json.tg.text));
+    assert.ok(d && /Cool Co/.test(d.json.tg.text) && !/Watched Co|Meh Co/.test(d.json.tg.text));
+    assert.equal(d.json.tg.reply_markup.inline_keyboard[0][0].callback_data, 'w:Cool Co');
+  });
+  const wpress = await runNode(OTH.actions_parse, { env: { TELEGRAM_CHAT_ID: '42' }, input: [{ data: JSON.stringify({ result: [
+    { update_id: 9, callback_query: { id: 'q', data: 'w:Cool Co', message: { chat: { id: 42 }, message_id: 2, reply_markup: { inline_keyboard: [[{ text: '➕ Cool Co', callback_data: 'w:Cool Co' }]] } } } }] }) }] });
+  t('➕ press → watch row + button turns into 👀', () => {
+    assert.equal(wpress[0].json.watch.name, 'Cool Co'); assert.ok(JSON.stringify(wpress[0].json.tgCalls[1].body).includes('👀 Watching Cool Co'));
+  });
+  const wmail = await runNode(OTH.inbox_parse, { input: [{ subject: 'JobRadar WATCH Cool Co JR-CMD' }] });
+  t('email ➕ Watch command', () => assert.equal(wmail[0].json.watch.name, 'Cool Co'));
   t('jr ids are stable and short', () => { assert.equal(L.shortHash('ashby:n8n:1'), L.shortHash('ashby:n8n:1')); assert.equal(L.shortHash('x').length, 6); });
   console.log(`\nunit OK (${n} checks)`);
 })().catch((e) => { console.error(e); process.exit(1); });

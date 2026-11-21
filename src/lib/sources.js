@@ -12,6 +12,7 @@ function atsUrls() { return {
   recruitee: (s) => `https://${s}.recruitee.com/api/offers/`,
   personio: (s) => `https://${s}.jobs.personio.de/xml?language=en`,
   smartrecruiters: (s) => `https://api.smartrecruiters.com/v1/companies/${s}/postings?limit=100`,
+  pinpoint: (s) => `https://${s}.pinpointhq.com/postings.json`,
 }; }
 
 // "https://jobs.ashbyhq.com/n8n" → { ats: 'ashby', slug: 'n8n' }. Paste career-page links; no need to know what an ATS is.
@@ -26,9 +27,27 @@ function detectAts(url) {
     [/([a-z0-9-]+)\.recruitee\.com/i, 'recruitee'],
     [/([a-z0-9-]+)\.jobs\.personio\.(?:de|com)/i, 'personio'],
     [/(?:jobs|careers)\.smartrecruiters\.com\/([^/?#]+)/i, 'smartrecruiters'],
+    [/([a-z0-9-]+)\.pinpointhq\.com/i, 'pinpoint'],
   ];
   for (const [re, ats] of pats) { const m = u.match(re); if (m && m[1] && !/^(embed|jobs|api)$/i.test(m[1])) return { ats, slug: m[1] }; }
   return null;
+}
+
+function normName(s) { return String(s || '').toLowerCase().replace(/\b(inc|ltd|llc|gmbh|corp|co|technologies|hq)\b/g, '').replace(/[^a-z0-9]+/g, ''); }
+
+// every company you name: polled directly when its job board is supported, and recognised by name on every other source
+function watchList(settings, extra) {
+  const map = {};
+  for (const entry of settings.companies || []) {
+    const e = typeof entry === 'string' ? { url: entry } : entry;
+    if (e.enabled === false) continue;
+    const det = e.url ? detectAts(e.url) : null;
+    const name = e.name || (det && det.slug);
+    if (name) map[normName(name)] = { name, dream: !!e.dream };
+    for (const alias of e.aliases || []) map[normName(alias)] = { name, dream: !!e.dream };
+  }
+  for (const w of extra || []) if (w && w.name) map[normName(w.name)] = map[normName(w.name)] || { name: w.name, dream: w.dream !== false };
+  return map;
 }
 
 function companiesFromSettings(settings) {
@@ -36,6 +55,7 @@ function companiesFromSettings(settings) {
   for (const entry of settings.companies || []) {
     const e = typeof entry === 'string' ? { url: entry } : Object.assign({}, entry);
     if (e.enabled === false) continue;
+    if (!e.url && !e.ats && e.name) continue; // watch-by-name only
     const det = e.ats && e.slug ? { ats: e.ats, slug: e.slug } : detectAts(e.url);
     if (!det) { invalid.push(e.url || JSON.stringify(e)); continue; }
     const name = e.name || (/\d/.test(det.slug) || det.slug.length <= 3 ? det.slug : det.slug.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()));
@@ -227,6 +247,15 @@ function normalize(req, raw) {
         postedAt: toIso(j.releasedDate), url: `https://jobs.smartrecruiters.com/${req.slug}/${j.id}`, applyUrl: `https://jobs.smartrecruiters.com/${req.slug}/${j.id}`,
         description: [j.function && j.function.label, j.experienceLevel && j.experienceLevel.label].filter(Boolean).join(' · ') }));
     }
+  } else if (s === 'pinpoint' && data && Array.isArray(data.data)) {
+    for (const j of data.data) {
+      const loc = j.location || {};
+      const pay = j.compensation_visible && j.compensation_minimum ? `${j.compensation_currency || ''} ${j.compensation_minimum}-${j.compensation_maximum} ${j.compensation_frequency || ''}`.trim() : null;
+      out.push(mk({ uid: `pinpoint:${req.slug}:${j.id}`, source: s, sourceLabel: 'Pinpoint (direct)', company: req.company, dream: req.dream,
+        title: j.title, location: [loc.city, loc.name].filter(Boolean).join(', '), remote: j.workplace_type === 'remote' ? true : null, workplaceType: j.workplace_type_text || j.workplace_type || null,
+        postedAt: null, url: j.url, applyUrl: j.url, salary: pay,
+        description: htmlToText([j.description, j.key_responsibilities, j.skills_knowledge_expertise, j.benefits].filter(Boolean).join('\n')) }));
+    }
   } else if (s === 'hiringcafe_mcp' && data && (data.result || data.error)) {
     // tolerant: structuredContent, or JSON inside a text content block
     const r = data.result || {};
@@ -264,7 +293,8 @@ function compileRe(list) {
 
 function preFilter(job, targets, now) {
   const f = targets.filters || {};
-  const inc = compileRe([].concat(f.titleInclude || [], job.dream ? (f.titleIncludeDream || []) : []));
+  // dream companies: every role that isn't excluded gets screened (the AI judges fit), unless you turn that off
+  const inc = job.dream && f.dreamAnyTitle !== false ? null : compileRe([].concat(f.titleInclude || [], job.dream ? (f.titleIncludeDream || []) : []));
   const exc = compileRe(job.dream ? (f.titleExcludeDream || f.titleExclude) : f.titleExclude);
   const lang = compileRe(f.languageExclude);
   if (inc && !inc.test(job.title)) return 'title-not-relevant';

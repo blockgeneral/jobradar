@@ -10,5 +10,11 @@ Senior backend engineer in Lisbon, Portugal (EU citizen). Go, Python, PostgreSQL
 # Roles I want
 Senior backend / platform engineer at a product company. Payments, logistics, developer tools or data infrastructure preferred.
 
+# What I value in a company (most important first)
+1. Engineering culture that writes things down and owns on-call (deal-breaker if absent)
+2. Remote within Europe, async-friendly
+3. Products real businesses depend on (payments, logistics, infrastructure)
+4. Learning from senior engineers better than me
+
 # Not for me
 Staff/principal titles with no hands-on coding, frontend or mobile roles, crypto, agencies.

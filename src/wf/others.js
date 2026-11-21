@@ -26,6 +26,15 @@ for (const u of updates) {
   if (!q || !q.data || String(q.message && q.message.chat && q.message.chat.id) !== myChat) continue;
   const [act, id, outcome] = q.data.split(':');
   let set = null, toast = '', markup = (q.message.reply_markup && q.message.reply_markup.inline_keyboard) || [];
+  if (act === 'w') {
+    const name = q.data.slice(2);
+    const idx = markup.findIndex((row) => row.some((b) => b.callback_data === q.data));
+    if (idx >= 0) markup[idx] = [{ text: `👀 Watching ${name}`, callback_data: 'noop:w' }];
+    out.push({ json: { watch: { name, dream: true, added_at: now, source: 'telegram' }, tgCalls: [
+      { method: 'answerCallbackQuery', body: { callback_query_id: q.id, text: `Watching ${name} — its roles now get priority` } },
+      { method: 'editMessageReplyMarkup', body: { chat_id: q.message.chat.id, message_id: q.message.message_id, reply_markup: { inline_keyboard: markup } } } ] } });
+    continue;
+  }
   if (act === 'ap') { set = { status: 'applied', applied_at: now }; toast = 'Marked as applied ✅ Good luck!'; }
   else if (act === 'sk') { set = { status: 'skipped' }; toast = 'Skipped ⏭'; }
   else if (act === 'o' && OUT_LABEL[outcome]) { set = { outcome, outcome_at: now }; toast = 'Saved: ' + OUT_LABEL[outcome]; }
@@ -50,6 +59,10 @@ return out;
 // rows to update in jobradar_jobs
 return $input.all().filter((it) => it.json.set).map((it) => ({ json: Object.assign({ jr_id: it.json.jr_id }, it.json.set) }));
 
+//@node watch_rows
+// companies you tapped ➕ on → jobradar_watch
+return $input.all().filter((it) => it.json.watch).map((it) => ({ json: it.json.watch }));
+
 //@node actions_calls
 // Telegram replies (toast + updated buttons)
 return $input.all().flatMap((it) => it.json.tgCalls.map((c) => ({ json: c })));
@@ -60,6 +73,8 @@ const now = new Date().toISOString();
 const out = [];
 for (const it of $input.all()) {
   const subj = String(it.json.subject || '');
+  const wm = subj.match(/JobRadar\s+WATCH\s+(.+?)\s+JR-CMD/i);
+  if (wm) { out.push({ json: { watch: { name: wm[1].trim(), dream: true, added_at: now, source: 'email' } } }); continue; }
   const m = subj.match(/JobRadar\s+(APPLIED|SKIP|OUTCOME\s+(reply|rejected|intro|offer|none))\s+(JR-[A-Z0-9]{6})/i);
   if (!m) continue;
   const id = m[3].toUpperCase();
@@ -68,6 +83,12 @@ for (const it of $input.all()) {
   out.push({ json: Object.assign({ jr_id: id }, set) });
 }
 return out;
+
+//@node inbox_rows
+return $input.all().filter((it) => it.json.jr_id).map((it) => it);
+
+//@node inbox_watch
+return $input.all().filter((it) => it.json.watch).map((it) => ({ json: it.json.watch }));
 
 //@node replies_prefilter
 // 🔍 Reply detection — only mail that plausibly comes from a company you applied to goes to Claude
@@ -143,14 +164,16 @@ if (['weekly', 'monthly', 'digest'].includes(force)) due.push(force);
 else {
   if (rep.weekly !== false && parts.weekday.toLowerCase() === String(rep.weeklyDay || 'monday').toLowerCase() && hour === hh(rep.time) && state.weekly !== today) { due.push('weekly'); state.weekly = today; }
   if (rep.monthly !== false && parts.day === '01' && hour === hh(rep.time) && state.monthly !== today) { due.push('monthly'); state.monthly = today; }
-  if (n.delivery === 'digest' && hour === hh(n.digestTime) && state.digest !== today) { due.push('digest'); state.digest = today; }
+  // the daily list runs every day: "worth a look" roles (and everything, in digest mode)
+  if (hour === hh(n.digestTime) && state.digest !== today) { due.push('digest'); state.digest = today; }
 }
-return due.map((d) => ({ json: { due: d, reports: rep } }));
+return due.map((d) => ({ json: { due: d, reports: rep, settings } }));
 
 //@node reports_build
 // 📊 Build reports / digest
 const dues = $('⏰ What\'s due').all().map((x) => x.json);
-const rows = $input.all().map((x) => x.json).filter((r) => r && r.jr_id);
+const rows = $('🗃️ Tracker').all().map((x) => x.json).filter((r) => r && r.jr_id);
+const watchRows = $input.all().map((x) => x.json).filter((r) => r && r.name);
 const ch = channelsEnabled();
 const to = envGet('NOTIFY_EMAIL_TO') || envGet('SMTP_USER') || '';
 const out = [];
@@ -162,6 +185,7 @@ for (const d of dues) {
     continue;
   }
   const R = computeReport(rows, d.due, Date.now(), d.reports);
+  R.discover = discoverCompanies(rows, watchList(d.settings || {}, watchRows), Date.now() - (d.due === 'monthly' ? 30 : 7) * 864e5);
   if (ch.includes('telegram')) for (const m of telegramReport(R)) out.push({ json: m });
   if (ch.includes('email')) out.push({ json: emailReport(R, to) });
 }

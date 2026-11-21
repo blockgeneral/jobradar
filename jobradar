@@ -151,16 +151,17 @@ clean_path() { # Mac Terminal drag-and-drop gives "path\ with\ spaces" or 'quote
 
 import_cv() {
   say ""; say "  ${B}Import your CV${N}  ${D}PDF works best — Word: File → Save as PDF · LinkedIn: your profile → More → Save to PDF${N}"
-  local f name targets loc pay
+  local f name targets loc pay vals
   f="$(clean_path "$(ask 'Drag the file into this window (or type its path), then press Enter')")"
   [ -f "$f" ] || { warn "Can't find that file."; return 1; }
   case "$f" in *.pdf|*.PDF|*.md|*.txt) ;; *) warn "Please export it as PDF first."; return 1;; esac
   targets="$(ask 'Which roles are you going for? (e.g. Account Executive, Partnerships Manager)')"
   loc="$(ask 'Where are you based, and where can you work? (e.g. Vienna; remote EU or hybrid Vienna)')"
   pay="$(ask 'Minimum pay, if you have one (e.g. 100k EUR OTE) — Enter to skip')"
+  vals="$(ask 'What matters most in a company? (e.g. remote-first, mission I believe in, strong team, pay transparency)')"
   mkdir -p candidate/import; name="$(basename "$f")"; cp "$f" "candidate/import/$name"
   say "  Reading your CV with Claude (about a minute)…"
-  if dc run --rm --no-deps -T -v "$PWD:/w" --entrypoint node n8n /w/tools/import-cv.js "/w/candidate/import/$name" "$targets" "$loc" "$pay" --write /w > candidate/.review.tmp 2> candidate/.import.err; then
+  if dc run --rm --no-deps -T -v "$PWD:/w" --entrypoint node n8n /w/tools/import-cv.js "/w/candidate/import/$name" "$targets" "$loc" "$pay" "$vals" --write /w > candidate/.review.tmp 2> candidate/.import.err; then
     say ""; say "${B}── Your CV review ───────────────────────────────${N}"; cat candidate/.review.tmp; say "${B}────────────────────────────────────────────────${N}"
     rm -f candidate/.review.tmp candidate/.import.err
     ok "wrote candidate/resume_base.md, cover_letter_base.md, experience_inventory.md, search_profile.md (+ cv_review.md)"
@@ -194,11 +195,11 @@ setup_candidate() {
 }
 
 setup_companies() {
-  say ""; say "${B}4 · Companies to watch${N}  ${D}Paste career-page links one per line, end with an empty line. Add * at the end for a dream company.${N}"
+  say ""; say "${B}4 · Companies to watch${N}  ${D}One per line: a careers-page link, or just a company name (watched on every job board). Add * for a dream company. Empty line to finish.${N}"
   [ -f settings.json ] || { cp settings.example.json settings.json; ok "created settings.json from the example"; }
   say "  Watching now:"; node_in /home/node/jobradar/tools/settings-tool.js list-companies < settings.json || true
   local urls=() u
-  while read -r -p "  link: " u && [ -n "$u" ]; do urls+=("$u"); done
+  while read -r -p "  company: " u && [ -n "$u" ]; do urls+=("$u"); done
   if [ ${#urls[@]} -gt 0 ]; then
     node_in /home/node/jobradar/tools/settings-tool.js add-companies "${urls[@]}" < settings.json > settings.json.new && mv settings.json.new settings.json
   fi

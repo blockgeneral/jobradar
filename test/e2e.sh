@@ -50,4 +50,14 @@ echo "── buttons"; hook jobradar-buttons b1
 sleep 2
 echo "── weekly report"; hook "jobradar-report?type=weekly" rep
 sleep 2
+echo "── daily 'worth a look' list"; hook "jobradar-report?type=digest" dig
+sleep 2
+node -e '
+const fs=require("fs");const m=fs.readFileSync(process.argv[1],"utf8").trim().split("\n").map(JSON.parse).filter(x=>x.reply_markup&&JSON.stringify(x.reply_markup).includes("\"w:"));
+if(!m.length){console.log("  no watch suggestions");process.exit(0)}
+const b=m[0].reply_markup.inline_keyboard.flat().find(x=>x.callback_data&&x.callback_data.startsWith("w:"));
+fetch("http://127.0.0.1:5689/_ctl/updates",{method:"POST",body:JSON.stringify([{update_id:200,callback_query:{id:"cqw",data:b.callback_data,message:{message_id:20,chat:{id:42},reply_markup:m[0].reply_markup}}}])}).then(()=>console.log("  pressed",b.callback_data));
+' "$T/mock/telegram_messages.jsonl"
+echo "── buttons (watch)"; hook jobradar-buttons b2
+sleep 2
 node "$ROOT/test/e2e-assert.js" "$T"

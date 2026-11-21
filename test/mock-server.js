@@ -27,12 +27,14 @@ const SRC = {
   },
   weworkremotely: `<?xml version="1.0"?><rss><channel>
 <item><title>Celonis: Account Executive - DACH</title><region>Anywhere in the World</region><country>Germany</country><type>Full-Time</type><description>&lt;p&gt;Sell&lt;/p&gt;</description><pubDate>${new Date(Date.now() - 3600e3).toUTCString()}</pubDate><guid>https://weworkremotely.com/remote-jobs/celonis-ae</guid><link>https://weworkremotely.com/remote-jobs/celonis-ae</link></item>
+<item><title>PetsApp: Partnerships Manager</title><region>Anywhere in the World</region><country></country><type>Full-Time</type><description>&lt;p&gt;Grow vet-clinic partnerships. Remote, English.&lt;/p&gt;</description><pubDate>${new Date(Date.now() - 2.5 * 3600e3).toUTCString()}</pubDate><guid>https://weworkremotely.com/remote-jobs/petsapp-pm</guid><link>https://weworkremotely.com/remote-jobs/petsapp-pm</link></item>
 <item><title>Acme Logistics: Account Manager</title><region>USA Only</region><country>US</country><type>Full-Time</type><description>&lt;p&gt;US only account manager role, must reside in the US.&lt;/p&gt;</description><pubDate>${new Date(Date.now() - 2 * 3600e3).toUTCString()}</pubDate><guid>https://weworkremotely.com/remote-jobs/acme-am</guid><link>https://weworkremotely.com/remote-jobs/acme-am</link></item>
 </channel></rss>`,
   remotive: { 'job-count': 1, jobs: [{ id: 991, url: 'https://remotive.com/remote-jobs/sales/ae-991', title: 'Account Executive', company_name: 'DataFlowCo', category: 'Sales / Business', job_type: 'full_time', publication_date: new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 19), candidate_required_location: 'Europe', salary: '', description: '<p>Data integration SaaS, EU remote, English.</p>' }] },
   remoteok: [{ legal: 'notice' }, { id: '77', epoch: Math.floor(Date.now() / 1000) - 7200, company: 'DataFlowCo', position: 'Account Executive', location: 'Europe', url: 'https://remoteok.com/remote-jobs/77', apply_url: 'https://remoteok.com/l/77', description: 'dup of remotive (same company+title)' }],
   jobicy: { jobs: [] },
   himalayas: { jobs: [] },
+  pinpoint: { safetywing: { data: [{ id: 'pp1', title: 'Platform Business Partner', url: 'https://safetywing.pinpointhq.com/en/postings/pp1', workplace_type: 'remote', workplace_type_text: 'Fully remote', location: { name: 'Remote' }, description: '<p>Own platform partnerships for Remote Health. Based UTC+0 to UTC+6. English.</p>', compensation_visible: false }] } },
 };
 const HC_MCP = (id) => 'event: message\ndata: ' + JSON.stringify({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: JSON.stringify({ jobs: [
   { id: 'hc1', title: 'Partnerships Manager', company: 'CafeCo', location: 'Remote, Europe', url: 'https://hiring.cafe/job/hc1', postedAt: new Date(Date.now() - 50 * 60000).toISOString(), description: 'Partner channel role, EU remote, English.' }] }) }] } }) + '\n\n';
@@ -41,11 +43,14 @@ let TG_UPDATES = [];
 function mockScore(user) {
   const t = (user.match(/Title: (.*)/) || [])[1] || '';
   const c = (user.match(/Company: (.*)/) || [])[1] || '';
-  const good = /n8n|Anthropic|CafeCo|Supabase/.test(c);
+  const good = /n8n|Anthropic|CafeCo|Supabase|SafetyWing|PetsApp/.test(c);
+  const mid = /DataFlow/.test(c);
   return {
     location_eligible: /Acme/.test(c) ? 'no' : 'yes', location_reason: /Acme/.test(c) ? 'US residents only' : 'Remote EMEA with EOR',
     english_only: 'yes', comp_meets_floor: good ? 'yes' : 'unknown', comp_note: '',
-    role_family: 'new_business_ae', seniority_fit: 'fit', score: good ? 86 : (/DataFlow/.test(c) ? 74 : 40),
+    role_family: 'new_business_ae', seniority_fit: 'fit', score: good ? 86 : (mid ? 74 : 40),
+    skills_fit: good ? 85 : (mid ? 70 : 40), values_fit: good ? 80 : (mid ? 62 : 45),
+    values_match: good ? ['remote-first: "work from anywhere"'] : [], company_note: c + ' — remote-first, Series B',
     why: /Backend/.test(t) ? ['Go + event-driven checkout rewrite maps directly to their platform APIs'] : ['Full-cycle mid-market AE in a technical product — matches their sales-led experience', 'Annual-contract negotiation & technical discovery are core to the role'],
     gaps: ['Asks for MEDDPICC — used in pieces, not formally trained'], red_flags: [],
     keywords: ['full-cycle', 'mid-market', 'discovery', 'annual contracts', 'MEDDPICC', 'Salesforce', 'technical buyers', 'EMEA'],
@@ -97,7 +102,7 @@ http.createServer(async (req, res) => {
       const d = SRC[source];
       if (d === undefined) return send(404, { error: 'unknown source' });
       if (typeof d === 'string') return send(200, d, { 'content-type': 'application/rss+xml' });
-      if (['ashby', 'greenhouse'].includes(source)) return d[s] ? send(200, d[s]) : send(404, { error: 'Not Found' });
+      if (['ashby', 'greenhouse', 'pinpoint'].includes(source)) return d[s] ? send(200, d[s]) : send(404, { error: 'Not Found' });
       return send(200, d);
     }
     if (u.pathname === '/v1/messages') {

@@ -41,7 +41,7 @@ for (let i = 0; i < resp.length; i++) {
   else {
     const d = parseBody(r.data);
     if (d === null || d === '') problem = 'empty response';
-    else if (req.slug && req.source !== 'himalayas' && req.source !== 'personio' && typeof d === 'object' && !Array.isArray(d) && !d.jobs && !d.offers && !d.content && !d.result) problem = 'unexpected response — wrong company link?';
+    else if (req.slug && req.source !== 'himalayas' && req.source !== 'personio' && typeof d === 'object' && !Array.isArray(d) && !d.jobs && !d.offers && !d.content && !d.result && !d.data) problem = 'unexpected response — wrong company link?';
     else if (d && d.error && req.source === 'hiringcafe_mcp') problem = 'Hiring Cafe MCP error: ' + JSON.stringify(d.error).slice(0, 100);
   }
   const key = req.source + ':' + (req.slug || '');
@@ -62,7 +62,9 @@ return [
 const plan = $('⚙️ Plan run').all();
 const { files, settings } = plan[0].json._candidate;
 const fetched = $('🌐 Fetch job sources').all();
-const tracked = $input.all().map((x) => x.json).filter((r) => r && r.uid);
+const tracked = $('🗃️ Already sent').all().map((x) => x.json).filter((r) => r && r.uid);
+const watchRows = $input.all().map((x) => x.json).filter((r) => r && r.name);
+const watched = watchList(settings, watchRows);
 const now = Date.now();
 const state = $getWorkflowStaticData('global');
 state.seen = state.seen || {};
@@ -80,6 +82,7 @@ for (let i = 0; i < fetched.length; i++) {
   if (!req || r.error || req.source === 'none') continue;
   try { jobs = jobs.concat(normalize(req, r.data)); } catch (e) { /* malformed payload — reported by 🩺 */ }
 }
+for (const j of jobs) { const w = watched[normName(j.company)]; if (w) { j.watched = true; if (w.dream) j.dream = true; } }
 const stats = { fetched: jobs.length };
 const passed = [];
 const batch = new Set();
@@ -89,8 +92,8 @@ for (const j of jobs) {
   batch.add(j.uid); batch.add('alt:' + j.altKey);
   if (known.has(j.uid) || known.has('alt:' + j.altKey) || state.seen[j.uid] || state.seen['alt:' + j.altKey]) { stats.seen = (stats.seen || 0) + 1; continue; }
   const age = hoursSince(j.postedAt, now);
-  // never flood: jobs without a post date are only taken once JobRadar is already running
-  if (!state.initialized && (age === null || age > freshH)) { mark(j); stats.seeded = (stats.seeded || 0) + 1; continue; }
+  // never flood: on the very first run only recent jobs (or undated ones at dream companies) go through
+  if (!state.initialized && (age === null ? !j.dream : age > freshH)) { mark(j); stats.seeded = (stats.seeded || 0) + 1; continue; }
   const reason = preFilter(j, Object.assign({}, settings, { filters: Object.assign({}, f, { freshHours: freshH }) }), now);
   if (reason) { stats[reason] = (stats[reason] || 0) + 1; mark(j); continue; }
   passed.push(j);
@@ -108,14 +111,17 @@ const model = envGet('SCORING_MODEL') || 'claude-haiku-5-5';
 return toScore.map((j) => ({ json: { job: j, preview: firstInstall, scoreRequest: scoreRequest(j, files['search_profile.md'], files['resume_base.md'], model) } }));
 
 //@node gate
-// 🎯 Gate — keep real matches only, build the tailoring request for each
+// 🎯 Gate — skills ≥ min AND values ≥ min appear; strong matches + dream companies get tailored now, the rest go to the daily "worth a look" list
 const prev = $('🧹 Normalize · dedupe · filter').all();
 const { files, settings } = $('⚙️ Plan run').first().json._candidate;
 const sc = settings.scoring || {};
+const minS = sc.minSkillsFit != null ? sc.minSkillsFit : 50;
+const minV = sc.minValuesFit != null ? sc.minValuesFit : 50;
+const instantAt = sc.instantAt != null ? sc.instantAt : 75;
 const resp = $input.all();
 const state = $getWorkflowStaticData('global');
 const model = envGet('TAILORING_MODEL') || 'claude-sonnet-5-5';
-const matches = [];
+const instant = [], digest = [];
 let preview = false;
 for (let i = 0; i < resp.length; i++) {
   const p = prev[i] && prev[i].json;
@@ -125,19 +131,27 @@ for (let i = 0; i < resp.length; i++) {
   const r = resp[i].json;
   const fit = r.error ? null : toolInput(r);
   if (!fit) {
-    matches.push({ job, scoreError: true, fit: { score: null, why: [], gaps: [], red_flags: [], keywords: [], role_family: '', seniority_fit: '', location_eligible: 'unclear', english_only: 'unclear', comp_meets_floor: 'unknown' },
+    instant.push({ job, scoreError: true, fit: { score: null, skills_fit: null, values_fit: null, why: [], gaps: [], red_flags: [], keywords: [], values_match: [], role_family: '', seniority_fit: '', location_eligible: 'unclear', english_only: 'unclear', comp_meets_floor: 'unknown' },
       warnings: ['Not screened — Claude call failed (' + String((r.error && (r.error.message || r.error)) || 'no output').slice(0, 90) + ')'] });
     continue;
   }
-  const threshold = job.dream ? (sc.dreamThreshold || 55) : (sc.threshold || 70);
+  const skills = fit.skills_fit != null ? fit.skills_fit : fit.score;
+  const values = fit.values_fit != null ? fit.values_fit : 50;
   const hardNo = fit.location_eligible === 'no' || fit.english_only === 'no' || fit.comp_meets_floor === 'no';
-  if (!hardNo && fit.score >= threshold) matches.push({ job, fit, warnings: [] });
+  if (hardNo || skills < (job.dream ? minS - 10 : minS) || values < minV) continue;
+  (job.dream || fit.score >= instantAt ? instant : digest).push({ job, fit, warnings: [] });
 }
-matches.sort((a, b) => (b.job.dream - a.job.dream) || ((b.fit.score || 0) - (a.fit.score || 0)));
+instant.sort((a, b) => (b.job.dream - a.job.dream) || ((b.fit.score || 0) - (a.fit.score || 0)));
 const cap = preview ? ((settings.preview && settings.preview.count) || 3) : (sc.maxTailoredPerRun || 4);
-if (!preview) for (const m of matches.slice(cap)) { delete state.seen[m.job.uid]; delete state.seen['alt:' + m.job.altKey]; } // retry next run
-return matches.slice(0, cap).map((m) => ({ json: Object.assign(m, { preview,
-  tailorRequest: tailorRequest(m.job, m.fit, files['resume_base.md'], files['cover_letter_base.md'], files['search_profile.md'], files['experience_inventory.md'], model) }) }));
+for (const m of instant.slice(cap)) { delete state.seen[m.job.uid]; delete state.seen['alt:' + m.job.altKey]; } // over the cap: picked up next run
+return instant.slice(0, cap).map((m) => ({ json: Object.assign(m, { tier: 'instant', preview,
+  tailorRequest: tailorRequest(m.job, m.fit, files['resume_base.md'], files['cover_letter_base.md'], files['search_profile.md'], files['experience_inventory.md'], model) }) }))
+  .concat(digest.map((m) => ({ json: Object.assign(m, { tier: 'digest' }) })));
+
+//@node digest_rows
+// 📝 "Worth a look" rows — listed in tomorrow's daily summary, not tailored
+const now = new Date().toISOString();
+return $input.all().map(({ json: m }) => ({ json: trackerRow(m.job, m.fit, { status: 'digest_pending', notified_at: now, folder: '', channel: channelsEnabled().join(',') }) }));
 
 //@node compose
 // 🛡️ Guardrails & compose — assemble the letter, check the AI's work, prepare files + notifications
@@ -251,14 +265,10 @@ for (const c of jobs) {
 return out;
 
 //@node track_rows
-// 📝 Tracker rows — every match goes into the jobradar_jobs table (status, timestamps, outcome later)
+// 📝 Tracker rows — every tailored match goes into the jobradar_jobs table (status, timestamps, outcome later)
 const { settings } = $('⚙️ Plan run').first().json._candidate;
 const digest = (settings.notifications || {}).delivery === 'digest';
 const now = new Date().toISOString();
-return $('🛡️ Guardrails & compose').all().map(({ json: c }) => ({ json: {
-  jr_id: c.jrId, uid: c.job.uid, alt_key: c.job.altKey, company: c.job.company, title: c.job.title, location: String(c.job.location || '').slice(0, 200),
-  source: c.job.source, url: c.job.url || '', apply_url: c.job.applyUrl || c.job.url || '', score: c.fit.score === null ? -1 : Number(c.fit.score),
-  dream: !!c.job.dream, role_family: c.fit.role_family || '', salary: c.job.salary ? String(c.job.salary).slice(0, 120) : '',
-  posted_at: c.job.postedAt || '', notified_at: now, minutes_to_alert: c.job.postedAt ? Math.max(0, Math.round((Date.now() - new Date(c.job.postedAt)) / 60000)) : -1,
-  status: digest ? 'digest_pending' : 'notified', applied_at: '', outcome: '', outcome_at: '', folder: c.folder, channel: channelsEnabled().join(','),
-} }));
+return $('🛡️ Guardrails & compose').all().map(({ json: c }) => ({ json: Object.assign(trackerRow(c.job, c.fit, {
+  status: digest ? 'digest_pending' : 'notified', notified_at: now, folder: c.folder, channel: channelsEnabled().join(','),
+}), { jr_id: c.jrId }) }));

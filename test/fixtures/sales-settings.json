@@ -116,14 +116,15 @@
     "locationExclude": []
   },
   "scoring": {
-    "threshold": 70,
-    "dreamThreshold": 55,
+    "minSkillsFit": 50,
+    "minValuesFit": 50,
+    "instantAt": 75,
     "maxScoredPerRun": 40,
-    "maxTailoredPerRun": 4
+    "maxTailoredPerRun": 5
   },
   "preview": {
     "days": 7,
-    "count": 3
+    "count": 5
   },
   "notifications": {
     "delivery": "instant",
@@ -180,6 +181,15 @@
     },
     {
       "url": "https://jobs.ashbyhq.com/linear"
+    },
+    {
+      "url": "https://safetywing.pinpointhq.com",
+      "name": "SafetyWing",
+      "dream": true
+    },
+    {
+      "name": "PetsApp",
+      "dream": true
     }
   ],
   "guardrails": {

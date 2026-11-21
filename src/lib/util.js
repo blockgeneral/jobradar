@@ -103,3 +103,15 @@ function fillCoverLetter(base, slots) {
   for (const k of Object.keys(slots)) txt = txt.split('{{' + k + '}}').join(String(slots[k] || '').trim());
   return txt.replace(/\n{3,}/g, '\n\n').trim() + '\n';
 }
+
+function trackerRow(job, fit, extra) {
+  const num = (v) => (v === null || v === undefined || isNaN(Number(v)) ? -1 : Number(v));
+  return Object.assign({
+    jr_id: 'JR-' + shortHash(job.uid), uid: job.uid, alt_key: job.altKey, company: job.company, title: job.title, location: String(job.location || '').slice(0, 200),
+    source: job.source, url: job.url || '', apply_url: job.applyUrl || job.url || '', score: num(fit.score), skills_fit: num(fit.skills_fit), values_fit: num(fit.values_fit),
+    values_note: String((fit.values_match || []).join(' · ') || fit.company_note || '').slice(0, 300),
+    dream: !!job.dream, role_family: fit.role_family || '', salary: job.salary ? String(job.salary).slice(0, 120) : '',
+    posted_at: job.postedAt || '', minutes_to_alert: job.postedAt ? Math.max(0, Math.round((Date.now() - new Date(job.postedAt)) / 60000)) : -1,
+    applied_at: '', outcome: '', outcome_at: '',
+  }, extra || {});
+}

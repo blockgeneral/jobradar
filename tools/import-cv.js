@@ -8,7 +8,7 @@ const path = require('path');
 const argv = process.argv.slice(2);
 const wi = argv.indexOf('--write');
 const writeDir = wi >= 0 ? argv.splice(wi, 2)[1] : null;
-const [file, targets = '', location = '', pay = ''] = argv;
+const [file, targets = '', location = '', pay = '', values = ''] = argv;
 const env = process.env;
 if (!file || !fs.existsSync(file)) { console.error('CV file not found: ' + file); process.exit(2); }
 const ext = path.extname(file).toLowerCase();
@@ -24,7 +24,7 @@ const TOOL = {
       experience_inventory_md: { type: 'string', description: 'Every fact in the CV, grouped by role newest first, as bullets with context and numbers exactly as written in the CV. Start with the comment line "<!-- EXPERIENCE INVENTORY — imported from CV; the interview adds more. Only facts the candidate wrote or confirmed. -->". End with a section "# Positioning by role type" containing, for each target role type (2–4), "## <role type>" then "- Lead with: …", "- Best proof: …", "- Play down: …" — built only from CV facts. Then "# Never claim" with "- (fill in during the interview)".' },
       resume_md: { type: 'string', description: 'An improved resume built ONLY from CV facts, in exactly this markdown structure: an HTML comment with tailoring rules; "# Full Name"; a headline line; a contact line (location | phone | email | linkedin/portfolio, exactly as in the CV, omit what is missing); "## Summary" (3–4 concrete sentences) followed by one bold line of 3–5 proof points; "## Experience" with "### Title | Company", an italic "*Location, Mon YYYY – Mon YYYY*" line and verb-first bullets (results over duties); then any other sections the CV has (e.g. "## Education and Languages"). Never invent numbers, tools, titles, dates or claims; when a bullet lacks a result, keep it factual rather than inventing one.' },
       cover_letter_md: { type: 'string', description: 'A first draft base cover letter in the candidate\'s plain first-person voice, built on 2–3 concrete stories from the CV (anecdotes over numbers), with exactly three slots: {{HIRING_TEAM}} in the salutation, {{WHY_COMPANY}} as its own paragraph, {{LOCATION_LINE}} as its own paragraph. Start with an HTML comment explaining the slots, and end with an HTML comment listing 2 LOCATION_LINE options, each in double quotes (remote role / office role).' },
-      search_profile_md: { type: 'string', description: 'A search profile under 300 words with sections "# Who I am", "# Hard requirements (a \\"no\\" on any of these = reject)" (Location, Language, Pay), "# Roles I want (best first)", "# Seniority", "# What makes a company better for me", "# Red flags". Use the target roles / location / pay the candidate gave; where something is unknown write "TODO: …" so they fill it in.' },
+      search_profile_md: { type: 'string', description: 'A search profile under 300 words with sections "# Who I am", "# Hard requirements (a \\"no\\" on any of these = reject)" (Location, Language, Pay), "# Roles I want (best first)", "# Seniority", "# What I value in a company (most important first; mark deal-breakers)", "# Red flags". Use the target roles / location / pay / values the candidate gave; where something is unknown write "TODO: …" so they fill it in.' },
       title_include: { type: 'array', items: { type: 'string' }, description: '6–14 lowercase regex fragments matching job titles the candidate should see.' },
       title_exclude: { type: 'array', items: { type: 'string' }, description: '6–14 lowercase regex fragments for titles to drop (too junior/senior, wrong function).' },
       board_queries: { type: 'array', items: { type: 'string' }, description: '2–4 short job-search phrases for their target roles.' },
@@ -41,7 +41,7 @@ const TOOL = {
   const content = [];
   if (ext === '.pdf') content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fs.readFileSync(file).toString('base64') } });
   else content.push({ type: 'text', text: '<cv>\n' + fs.readFileSync(file, 'utf8') + '\n</cv>' });
-  content.push({ type: 'text', text: `This is my current CV. I'm setting up JobRadar.\nTarget roles: ${targets || '(not given — infer from the CV and mark as TODO)'}\nWhere I can work: ${location || '(not given — TODO)'}\nMinimum pay: ${pay || '(not given — TODO)'}\n\nReview it honestly and build my starting files with the candidate_files tool. Use only facts from the CV.` });
+  content.push({ type: 'text', text: `This is my current CV. I'm setting up JobRadar.\nTarget roles: ${targets || '(not given — infer from the CV and mark as TODO)'}\nWhere I can work: ${location || '(not given — TODO)'}\nMinimum pay: ${pay || '(not given — TODO)'}\nWhat I value in a company: ${values || '(not given — TODO)'}\n\nReview it honestly and build my starting files with the candidate_files tool. Use only facts from the CV.` });
   const r = await fetch((env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com') + '/v1/messages', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': env.ANTHROPIC_API_KEY || '', 'anthropic-version': '2023-06-01' },
