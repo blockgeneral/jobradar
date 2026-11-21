@@ -3,6 +3,12 @@
 # Works with macOS bash 3.2 and Linux. Needs Docker (Desktop, OrbStack or Engine).
 set -euo pipefail
 cd "$(dirname "$0")"
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) printf "JobRadar on Windows runs inside WSL (Ubuntu), not Git Bash or PowerShell.\nSee docs/GETTING_STARTED.md → Windows.\n" >&2; exit 1;;
+esac
+IS_WSL=0; grep -qi microsoft /proc/version 2>/dev/null && IS_WSL=1
+# containers write your files as you (matters on Linux/WSL; harmless on Mac)
+JOBRADAR_UID="$(id -u)"; JOBRADAR_GID="$(id -g)"; export JOBRADAR_UID JOBRADAR_GID
 
 B=$'\033[1m'; D=$'\033[2m'; G=$'\033[32m'; Y=$'\033[33m'; R=$'\033[31m'; N=$'\033[0m'
 say()  { printf "%s\n" "$*"; }
@@ -146,7 +152,12 @@ XML
 }
 
 clean_path() { # Mac Terminal drag-and-drop gives "path\ with\ spaces" or 'quoted path'
-  local p="$1"; p="${p%"${p##*[![:space:]]}"}"; p="${p#\'}"; p="${p%\'}"; p="${p#\"}"; p="${p%\"}"; printf "%s" "${p//\\ / }"
+  local p="$1"; p="${p%"${p##*[![:space:]]}"}"; p="${p#\'}"; p="${p%\'}"; p="${p#\"}"; p="${p%\"}"
+  case "$p" in [A-Za-z]:\\*|[A-Za-z]:/*) # Windows path (WSL) → /mnt/c/…
+    if command -v wslpath >/dev/null 2>&1; then wslpath -u "$p"; return; fi
+    local d; d="$(printf "%s" "${p%%:*}" | tr 'A-Z' 'a-z')"; p="${p#?:}"; printf "/mnt/%s%s" "$d" "$(printf "%s" "$p" | tr '\\' '/')"; return;;
+  esac
+  printf "%s" "${p//\\ / }"
 }
 
 import_cv() {
@@ -161,7 +172,7 @@ import_cv() {
   vals="$(ask 'What matters most in a company? (e.g. remote-first, mission I believe in, strong team, pay transparency)')"
   mkdir -p candidate/import; name="$(basename "$f")"; cp "$f" "candidate/import/$name"
   say "  Reading your CV with Claude (about a minute)…"
-  if dc run --rm --no-deps -T -v "$PWD:/w" --entrypoint node n8n /w/tools/import-cv.js "/w/candidate/import/$name" "$targets" "$loc" "$pay" "$vals" --write /w > candidate/.review.tmp 2> candidate/.import.err; then
+  if dc run --rm --no-deps -T --user "$JOBRADAR_UID:$JOBRADAR_GID" -v "$PWD:/w" --entrypoint node n8n /w/tools/import-cv.js "/w/candidate/import/$name" "$targets" "$loc" "$pay" "$vals" --write /w > candidate/.review.tmp 2> candidate/.import.err; then
     say ""; say "${B}── Your CV review ───────────────────────────────${N}"; cat candidate/.review.tmp; say "${B}────────────────────────────────────────────────${N}"
     rm -f candidate/.review.tmp candidate/.import.err
     ok "wrote candidate/resume_base.md, cover_letter_base.md, experience_inventory.md, search_profile.md (+ cv_review.md)"
@@ -230,7 +241,7 @@ cmd_setup() {
   say ""
   say "${G}${B}All set.${N} New matches arrive within ~15 minutes of being published, while Docker is running."
   say "  • Change what you get:   ${B}settings.json${N} and ${B}candidate/${N} (applies on the next run)"
-  say "  • Your files per job:    ${B}output/${N}"
+  say "  • Your files per job:    ${B}output/${N}$( [ "$IS_WSL" = 1 ] && printf '  (open it in Windows: explorer.exe output)' )"
   say "  • See it in n8n:         ${B}http://localhost:5678${N} (create a local login on first visit)"
   say "  • Everything else:       ${B}./jobradar help${N}"
 }

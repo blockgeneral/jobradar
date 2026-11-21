@@ -29,11 +29,13 @@ Built with [n8n](https://n8n.io) and [Claude](https://claude.ai). Free and open 
 
 ## What you need (about 20 minutes)
 
-1. **Docker** — [Docker Desktop](https://www.docker.com/products/docker-desktop/) or [OrbStack](https://orbstack.dev) on a Mac, Docker Engine on Linux. Open it.
+1. **Docker** — [Docker Desktop](https://www.docker.com/products/docker-desktop/) on Mac or Windows (Windows: with WSL/Ubuntu), Docker Engine on Linux. Open it.
 2. **A Claude API key** — [console.anthropic.com](https://console.anthropic.com) → API keys, with ~$10 of credit. (A Claude app subscription doesn't include API use.) Expect roughly $10–20 a month (estimate; check your usage page after week one).
 3. **Somewhere to be notified** — Telegram (a bot you create in 1 minute with @BotFather) and/or email (Gmail, Outlook, iCloud or any SMTP/IMAP mailbox with an app password).
 
 ## Install
+
+Works on **Mac, Windows (via WSL) and Linux** — step-by-step for each: [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
 
 ```bash
 git clone https://github.com/<you>/jobradar.git

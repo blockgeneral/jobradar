@@ -33,7 +33,7 @@ case "${1:-}" in
   run)
     shift; ep=""; args=()
     while [ $# -gt 0 ]; do
-      case "$1" in --rm|--no-deps|-T) shift;; -v) shift 2;; --entrypoint) ep="$2"; shift 2;; n8n|renderer) shift; break;; *) shift;; esac
+      case "$1" in --rm|--no-deps|-T) shift;; -v|--user) shift 2;; --entrypoint) ep="$2"; shift 2;; n8n|renderer) shift; break;; *) shift;; esac
     done
     loadenv
     for a in "$@"; do args+=("$(map "$a")"); done

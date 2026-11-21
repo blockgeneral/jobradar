@@ -29,6 +29,7 @@ services:
     build: ./renderer
     image: jobradar-renderer:local
     restart: unless-stopped
+    user: "${JOBRADAR_UID:-1000}:${JOBRADAR_GID:-1000}"   # files in output/ belong to you
     environment:
       - GOTENBERG_URL=http://gotenberg:3000
       - OUTPUT_DIR=/data/output
