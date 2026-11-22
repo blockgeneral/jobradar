@@ -148,7 +148,7 @@ async function runNode(code, { input = [], nodes = {}, env = {}, state = {} }) {
   t('reply detection: only mail about applied companies reaches Claude', () => {
     assert.equal(pre.length, 1); assert.ok(pre[0].json.request.messages[0].content.includes('JR-AAAAAA'));
   });
-  const verdicts = await runNode(OTH.replies_apply, { input: [{ content: [{ type: 'tool_use', input: { jr_id: 'JR-AAAAAA', outcome: 'intro', summary: 'n8n wants a call' } }] }], nodes: { '🔍 Plausible replies': pre.map((x) => x.json) } });
+  const verdicts = await runNode(OTH.replies_apply, { input: [{ content: [{ type: 'text', text: JSON.stringify({ jr_id: 'JR-AAAAAA', outcome: 'intro', summary: 'n8n wants a call' }) }], stop_reason: 'end_turn' }], nodes: { '🔍 Plausible replies': pre.map((x) => x.json) } });
   t('reply verdict → tracker row + heads-up', () => { assert.equal(verdicts[0].json.row.outcome, 'intro'); assert.ok(verdicts[0].json.note.includes('📞')); });
   const dig = await runNode(OTH.reports_build, { env: { NOTIFY_CHANNELS: 'email', NOTIFY_EMAIL_TO: 'me+jobradar@x.com' }, input: [],
     nodes: { '🗃️ Tracker': [{ jr_id: 'JR-1', status: 'digest_pending', score: 70, skills_fit: 70, values_fit: 60, company: 'A', title: 'AE', apply_url: 'https://a' }, { jr_id: 'JR-2', status: 'notified', score: 90 }],

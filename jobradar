@@ -69,7 +69,7 @@ deploy_workflows() {
 
 # ───────────────────────────── setup ─────────────────────────────
 setup_claude() {
-  say ""; say "${B}1 · Claude API key${N}  ${D}(console.anthropic.com → API keys; add ~\$10 credit. The Claude app subscription doesn't include API use.)${N}"
+  say ""; say "${B}1 · Claude API key${N}  ${D}(platform.claude.com → API keys. Claude Max/Team plans include monthly API credits — link your Console org under claude.ai Settings → Billing. Otherwise add ~\$10 credit.)${N}"
   local k cur; cur="$(env_get ANTHROPIC_API_KEY)"
   while :; do
     if [ -n "$cur" ] && yes "Keep the key already saved (…${cur: -4})?"; then k="$cur"; else k="$(asks 'Paste your key (sk-ant-…)')"; fi
@@ -224,7 +224,8 @@ cmd_setup() {
   setup_claude
   say ""; say "${B}2 · Notifications${N}"
   say "   1) Telegram   2) Email   3) Both"
-  local c; c="$(ask 'Choose' "$(case "$(channels)" in telegram) echo 1;; email) echo 2;; *email*) echo 3;; *) echo 1;; esac)")"
+  local c d; case "$(channels)" in telegram) d=1;; email) d=2;; *email*) d=3;; *) d=1;; esac
+  c="$(ask 'Choose' "$d")"
   case "$c" in 2) env_set NOTIFY_CHANNELS email;; 3) env_set NOTIFY_CHANNELS telegram,email;; *) env_set NOTIFY_CHANNELS telegram;; esac
   has_channel telegram && setup_telegram
   has_channel email && setup_email

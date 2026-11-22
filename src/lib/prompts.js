@@ -1,4 +1,47 @@
-// ---- prompts.js : Claude requests (tool-forced JSON, so output is always parseable) ----
+// ---- prompts.js : Claude requests (schema-constrained JSON output, so replies are always parseable) ----
+// Claude 5.5 models reject forced tool use (tool_choice "tool"/"any") and sampling params (temperature, top_p).
+// Each request therefore asks for JSON via output_config.format, built from the same schemas as before.
+
+// JSON outputs don't accept numeric/length/maxItems constraints and need additionalProperties:false on objects:
+// move the constraints into the description (Claude still follows them) and enforce them where it matters.
+function jsonSchemaFor(s) {
+  if (!s || typeof s !== 'object' || Array.isArray(s)) return s;
+  const o = Object.assign({}, s); const notes = [];
+  if ('minimum' in o && 'maximum' in o) notes.push(`a number from ${o.minimum} to ${o.maximum}`);
+  else { if ('minimum' in o) notes.push(`at least ${o.minimum}`); if ('maximum' in o) notes.push(`at most ${o.maximum}`); }
+  if ('maxItems' in o) notes.push(`at most ${o.maxItems} items`);
+  if ('minItems' in o && o.minItems > 1) notes.push(`at least ${o.minItems} items`);
+  if ('minLength' in o) notes.push(`at least ${o.minLength} characters`);
+  if ('maxLength' in o) notes.push(`at most ${o.maxLength} characters`);
+  for (const k of ['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf', 'minLength', 'maxLength', 'maxItems']) delete o[k];
+  if ('minItems' in o && o.minItems > 1) delete o.minItems;
+  if (notes.length) o.description = (o.description ? o.description + ' ' : '') + '(' + notes.join('; ') + ')';
+  if (o.type === 'object') {
+    o.additionalProperties = false;
+    if (o.properties) { const p = {}; for (const k of Object.keys(o.properties)) p[k] = jsonSchemaFor(o.properties[k]); o.properties = p; }
+  }
+  if (o.items) o.items = jsonSchemaFor(o.items);
+  return o;
+}
+
+// Thinking: Sonnet/Opus 5.5 think by default (adaptive, effort high); thinking tokens count toward max_tokens.
+// Medium effort is plenty for screening-grade judgement and keeps cost predictable. Older/other models: leave untouched.
+function thinkingFor(model, effort) {
+  if (/^claude-(sonnet|opus)-5-5/.test(model || '')) return { thinking: { type: 'adaptive' }, effort: effort || 'medium' };
+  return {};
+}
+
+// Build a Messages API request that returns one JSON object matching tool.input_schema.
+function structuredRequest(tool, req) {
+  const t = thinkingFor(req.model, req.effort);
+  const out = Object.assign({}, req);
+  delete out.effort; delete out.tools; delete out.tool_choice; delete out.temperature; delete out.top_p; delete out.top_k;
+  if (t.thinking) out.thinking = t.thinking;
+  out.output_config = Object.assign({}, req.output_config || {}, t.effort ? { effort: t.effort } : {}, { format: { type: 'json_schema', schema: jsonSchemaFor(tool.input_schema) } });
+  out.system = [req.system, `Reply with one JSON object only (${tool.name}): ${tool.description}`].filter(Boolean).join('\n\n');
+  return out;
+}
+
 
 function scoreTool() { return {
   name: 'job_fit',
@@ -31,15 +74,13 @@ function scoreTool() { return {
 
 function scoreRequest(job, profileMd, resumeMd, model) {
   const system = `You screen job postings for one specific candidate. You are strict and honest: a wasted application costs them time, a missed good one costs them more. Judge only from the posting text and the candidate files. Never assume facts that are not written.`;
-  const user = `<candidate_search_profile>\n${stripHtmlComments(profileMd)}\n</candidate_search_profile>\n\n<candidate_resume>\n${stripHtmlComments(resumeMd)}\n</candidate_resume>\n\n<job>\nCompany: ${job.company}\nTitle: ${job.title}\nLocation: ${job.location || 'not stated'}\nWorkplace: ${job.workplaceType || (job.remote ? 'remote' : 'not stated')}\nSalary: ${job.salary || 'not stated'}\nSource: ${job.sourceLabel}\nTarget/dream company: ${job.dream ? 'yes' : 'no'}\n\n${truncate(job.description, 9000)}\n</job>\n\nAssess this posting with the job_fit tool.`;
-  return {
+  const user = `<candidate_search_profile>\n${stripHtmlComments(profileMd)}\n</candidate_search_profile>\n\n<candidate_resume>\n${stripHtmlComments(resumeMd)}\n</candidate_resume>\n\n<job>\nCompany: ${job.company}\nTitle: ${job.title}\nLocation: ${job.location || 'not stated'}\nWorkplace: ${job.workplaceType || (job.remote ? 'remote' : 'not stated')}\nSalary: ${job.salary || 'not stated'}\nSource: ${job.sourceLabel}\nTarget/dream company: ${job.dream ? 'yes' : 'no'}\n\n${truncate(job.description, 9000)}\n</job>\n\nAssess this posting.`;
+  return structuredRequest(scoreTool(), {
     model: model || 'claude-haiku-5-5',
-    max_tokens: 1200,
+    max_tokens: 3000,
     system,
-    tools: [scoreTool()],
-    tool_choice: { type: 'tool', name: 'job_fit' },
     messages: [{ role: 'user', content: user }],
-  };
+  });
 }
 
 function tailorTool() { return {
@@ -72,20 +113,27 @@ Hard rules:
 3. Write like a sharp human, not a template: short concrete sentences, no buzzword stacking, no "passionate", "thrilled", "dynamic", "results-driven", "leverage", no em-dash chains.
 4. Angle: if the experience inventory has a "Positioning by role type" section, start from the angle that matches this job and use its best proof points.
 5. ATS: mirror the posting's exact terms only where they are literally true of the candidate's experience (e.g. "full-cycle", "mid-market", "annual contracts", "discovery").`;
-  const user = `<experience_inventory>\n${inventoryMd ? stripHtmlComments(inventoryMd) : '(none — use the base resume only)'}\n</experience_inventory>\n\n<base_resume>\n${resumeMd}\n</base_resume>\n\n<base_cover_letter>\n${coverMd}\n</base_cover_letter>\n\n<search_profile>\n${stripHtmlComments(profileMd)}\n</search_profile>\n\n<job>\nCompany: ${job.company}\nTitle: ${job.title}\nLocation: ${job.location || 'not stated'} | Workplace: ${job.workplaceType || (job.remote ? 'remote' : 'not stated')} | Salary: ${job.salary || 'not stated'}\n\n${truncate(job.description, 12000)}\n</job>\n\n<screening_notes>\nRole family: ${fit.role_family} | Seniority fit: ${fit.seniority_fit}\nATS keywords from the posting: ${(fit.keywords || []).join(', ')}\nGaps found: ${(fit.gaps || []).join(' | ')}\n</screening_notes>\n\nProduce the tailored application with the tailored_application tool.`;
-  return {
+  const user = `<experience_inventory>\n${inventoryMd ? stripHtmlComments(inventoryMd) : '(none — use the base resume only)'}\n</experience_inventory>\n\n<base_resume>\n${resumeMd}\n</base_resume>\n\n<base_cover_letter>\n${coverMd}\n</base_cover_letter>\n\n<search_profile>\n${stripHtmlComments(profileMd)}\n</search_profile>\n\n<job>\nCompany: ${job.company}\nTitle: ${job.title}\nLocation: ${job.location || 'not stated'} | Workplace: ${job.workplaceType || (job.remote ? 'remote' : 'not stated')} | Salary: ${job.salary || 'not stated'}\n\n${truncate(job.description, 12000)}\n</job>\n\n<screening_notes>\nRole family: ${fit.role_family} | Seniority fit: ${fit.seniority_fit}\nATS keywords from the posting: ${(fit.keywords || []).join(', ')}\nGaps found: ${(fit.gaps || []).join(' | ')}\n</screening_notes>\n\nProduce the tailored application.`;
+  return structuredRequest(tailorTool(), {
     model: model || 'claude-sonnet-5-5',
-    max_tokens: 6000,
+    max_tokens: 20000,
     system,
-    tools: [tailorTool()],
-    tool_choice: { type: 'tool', name: 'tailored_application' },
     messages: [{ role: 'user', content: user }],
-  };
+  });
 }
 
 function toolInput(resp) {
+  // Returns the JSON object Claude produced: from the text block (JSON outputs) or, for older responses, a tool_use block.
   if (!resp) return null;
   if (typeof resp === 'string') { try { resp = JSON.parse(resp); } catch (e) { return null; } }
-  const block = (resp.content || []).find((c) => c.type === 'tool_use');
-  return block ? block.input : null;
+  const content = resp.content || [];
+  const tu = content.find((c) => c.type === 'tool_use');
+  if (tu) return tu.input;
+  if (resp.stop_reason === 'max_tokens' || resp.stop_reason === 'refusal') return null;
+  const text = content.filter((c) => c.type === 'text').map((c) => c.text).join('').trim();
+  if (!text) return null;
+  try { return JSON.parse(text); } catch (e) {}
+  const a = text.indexOf('{'), b = text.lastIndexOf('}');
+  if (a >= 0 && b > a) { try { return JSON.parse(text.slice(a, b + 1)); } catch (e) {} }
+  return null;
 }

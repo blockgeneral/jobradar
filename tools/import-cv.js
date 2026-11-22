@@ -14,6 +14,9 @@ if (!file || !fs.existsSync(file)) { console.error('CV file not found: ' + file)
 const ext = path.extname(file).toLowerCase();
 if (!['.pdf', '.md', '.txt'].includes(ext)) { console.error('Please export your CV as PDF (Word: File → Save as PDF; LinkedIn: your profile → More → Save to PDF).'); process.exit(2); }
 
+// Shared request/response helpers (same code the n8n workflows use).
+const P = new Function(fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'prompts.js'), 'utf8') + '; return { structuredRequest, toolInput };')();
+
 const TOOL = {
   name: 'candidate_files',
   description: 'Review of the CV plus JobRadar starting files built strictly from it.',
@@ -41,22 +44,20 @@ const TOOL = {
   const content = [];
   if (ext === '.pdf') content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fs.readFileSync(file).toString('base64') } });
   else content.push({ type: 'text', text: '<cv>\n' + fs.readFileSync(file, 'utf8') + '\n</cv>' });
-  content.push({ type: 'text', text: `This is my current CV. I'm setting up JobRadar.\nTarget roles: ${targets || '(not given — infer from the CV and mark as TODO)'}\nWhere I can work: ${location || '(not given — TODO)'}\nMinimum pay: ${pay || '(not given — TODO)'}\nWhat I value in a company: ${values || '(not given — TODO)'}\n\nReview it honestly and build my starting files with the candidate_files tool. Use only facts from the CV.` });
+  content.push({ type: 'text', text: `This is my current CV. I'm setting up JobRadar.\nTarget roles: ${targets || '(not given — infer from the CV and mark as TODO)'}\nWhere I can work: ${location || '(not given — TODO)'}\nMinimum pay: ${pay || '(not given — TODO)'}\nWhat I value in a company: ${values || '(not given — TODO)'}\n\nReview it honestly and build my starting files. Use only facts from the CV.` });
   const r = await fetch((env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com') + '/v1/messages', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': env.ANTHROPIC_API_KEY || '', 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({
-      model: env.TAILORING_MODEL || 'claude-sonnet-5-5', max_tokens: 16000,
+    body: JSON.stringify(P.structuredRequest(TOOL, {
+      model: env.TAILORING_MODEL || 'claude-sonnet-5-5', max_tokens: 32000,
       system: 'You are a senior tech recruiter and resume writer. You are direct and specific. You never invent facts: every number, title, date, tool and claim must come from the CV.',
-      tools: [TOOL], tool_choice: { type: 'tool', name: 'candidate_files' },
       messages: [{ role: 'user', content }],
-    }),
+    })),
   });
   const body = await r.json().catch(() => ({}));
   if (!r.ok) { console.error(`Claude error ${r.status}: ${JSON.stringify(body.error || body).slice(0, 300)}`); process.exit(1); }
-  const t = (body.content || []).find((c) => c.type === 'tool_use');
-  if (!t) { console.error('Claude returned no files.'); process.exit(1); }
-  const o = t.input;
+  const o = P.toolInput(body);
+  if (!o) { console.error(`Claude returned no files (stop_reason: ${body.stop_reason || 'unknown'}).`); process.exit(1); }
   const result = {
     review_md: o.review_md,
     files: {

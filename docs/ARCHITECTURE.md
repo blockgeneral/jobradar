@@ -23,7 +23,7 @@
 **Design choices**
 - *Direct ATS feeds over job boards and MCP servers* for the poller: deterministic, free, and they update the minute a role is published. MCP servers are great in chat; Hiring Cafe's community MCP is used as one extra source.
 - *Rules before AI*: titles, languages, freshness and duplicates are filtered in code, so Claude only sees plausible jobs.
-- *Two models*: Haiku screens cheaply; Sonnet writes. Both are called with forced tool output, so results are always valid JSON.
+- *Two models*: Haiku screens cheaply; Sonnet writes. Both return schema-constrained JSON (`output_config.format`; the 5.5 models reject forced tool use and `temperature`), so results are always valid JSON. Ranges and list lengths the JSON schema can't express are clamped in the gate.
 - *Truth checks in code, not prompts*: every number in a tailored resume must exist in the candidate's files; never-claim patterns; required sections; unchanged contact line. Cover letters are assembled in code — the AI only fills three slots.
 - *No public URL needed*: Telegram buttons are polled with `getUpdates`; email buttons are `mailto:` commands read over IMAP.
 - *Settings over workflow edits*: users change `settings.json` and `candidate/`; workflows read them on every run, so updates never overwrite personal config.

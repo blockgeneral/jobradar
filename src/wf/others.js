@@ -105,15 +105,13 @@ for (const m of mails) {
   const cands = rows.filter((r) => { const c = norm(r.company); return c.length >= 3 && (hay.includes(c) || (ATS.test(from) && norm(text).includes(c))); });
   if (!cands.length) continue;
   const list = cands.slice(0, 6).map((r) => `${r.jr_id}: ${r.company} — ${r.title}`).join('\n');
-  out.push({ json: { from, subject: subj, request: {
-    model: envGet('SCORING_MODEL') || 'claude-haiku-5-5', max_tokens: 300,
-    tools: [{ name: 'classify', description: 'Classify a recruiting email', input_schema: { type: 'object', properties: {
+  out.push({ json: { from, subject: subj, request: structuredRequest({ name: 'classify', description: 'Classify a recruiting email', input_schema: { type: 'object', properties: {
       jr_id: { type: 'string', description: 'Which application this email is about (one of the ids), or "none".' },
       outcome: { type: 'string', enum: ['reply', 'rejected', 'intro', 'offer', 'irrelevant'], description: 'reply = a human replied/asked something; intro = invitation to a call/interview; rejected = not moving forward; irrelevant = newsletter, auto-acknowledgement ("we received your application"), marketing.' },
-      summary: { type: 'string', description: 'One short line for the candidate.' } }, required: ['jr_id', 'outcome', 'summary'] } }],
-    tool_choice: { type: 'tool', name: 'classify' },
+      summary: { type: 'string', description: 'One short line for the candidate.' } }, required: ['jr_id', 'outcome', 'summary'] } }, {
+    model: envGet('SCORING_MODEL') || 'claude-haiku-5-5', max_tokens: 1500,
     messages: [{ role: 'user', content: `Applications:\n${list}\n\nEmail\nFrom: ${from}\nSubject: ${subj}\n\n${text}` }],
-  } } });
+  }) } });
 }
 return out;
 

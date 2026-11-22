@@ -108,19 +108,28 @@ http.createServer(async (req, res) => {
     if (u.pathname === '/v1/messages') {
       const j = JSON.parse(body.toString());
       if (req.headers['x-api-key'] !== 'test-key') return send(401, { type: 'error', error: { type: 'authentication_error', message: 'bad key' } });
-      const tool = j.tools[0].name;
+      // Mirror the Claude 5.5 API: forced tool use and sampling params are 400s; JSON comes back as a text block.
+      if (j.tool_choice && ['tool', 'any'].includes(j.tool_choice.type)) return send(400, { type: 'error', error: { type: 'invalid_request_error', message: 'tool_choice: type "tool" and "any" are not supported for this model.' } });
+      if (['temperature', 'top_p', 'top_k'].some((k) => k in j)) return send(400, { type: 'error', error: { type: 'invalid_request_error', message: 'temperature is not supported for this model.' } });
+      const fmt = j.output_config && j.output_config.format;
+      if (!fmt || fmt.type !== 'json_schema') return send(400, { type: 'error', error: { type: 'invalid_request_error', message: 'mock: expected output_config.format json_schema' } });
+      const bad = JSON.stringify(fmt.schema).match(/"(minimum|maximum|maxItems|minLength|maxLength)"/);
+      if (bad) return send(400, { type: 'error', error: { type: 'invalid_request_error', message: `output_config.format.schema: ${bad[1]} is not supported` } });
+      const props = fmt.schema.properties || {};
+      const tool = props.review_md ? 'candidate_files' : props.location_eligible ? 'job_fit' : props.outcome ? 'classify' : 'tailored_application';
+      const json = (input) => send(200, { id: 'msg_x', type: 'message', role: 'assistant', model: j.model, content: [{ type: 'text', text: JSON.stringify(input) }], stop_reason: 'end_turn' });
       if (tool === 'candidate_files') {
         const doc = j.messages[0].content.find((c) => c.type === 'document');
         log('anthropic', { tool, hasPdf: !!(doc && Buffer.from(doc.source.data, 'base64').slice(0, 4).toString() === '%PDF'), prompt: j.messages[0].content.slice(-1)[0].text.slice(0, 200) });
-        return send(200, { content: [{ type: 'tool_use', id: 't', name: tool, input: {
+        return json({
           review_md: '**What works:** clear results.\n**Fix first:** 1) …', experience_inventory_md: '<!-- EXPERIENCE INVENTORY -->\n# Rotaflow\n- checkout rewrite\n# Positioning by role type\n## Backend\n- Lead with: checkout rewrite',
           resume_md: baseResume, cover_letter_md: 'Dear {{HIRING_TEAM}},\n\nStory.\n\n{{WHY_COMPANY}}\n\n{{LOCATION_LINE}}\n\n<!-- options:\n- Remote: "Remote is fine." -->',
-          search_profile_md: '# Who I am\nTODO', title_include: ['backend'], title_exclude: ['junior'], board_queries: ['backend engineer'], wwr_category: 'remote-back-end-programming-jobs', remotive_category: 'software-dev', remoteok_tag: 'backend', language_exclude: ['fluent (in )?german'] } }] });
+          search_profile_md: '# Who I am\nTODO', title_include: ['backend'], title_exclude: ['junior'], board_queries: ['backend engineer'], wwr_category: 'remote-back-end-programming-jobs', remotive_category: 'software-dev', remoteok_tag: 'backend', language_exclude: ['fluent (in )?german'] });
       }
       const user = j.messages[0].content;
       log('anthropic', { tool, company: (user.match(/Company: (.*)/) || [])[1], model: j.model, chars: user.length, hasInventory: /<experience_inventory>/.test(user) });
       const input = tool === 'job_fit' ? mockScore(user) : tool === 'classify' ? { jr_id: (user.match(/(JR-[A-Z0-9]{6})/) || [])[1] || 'none', outcome: 'intro', summary: 'n8n invites you to a 30-minute intro call' } : mockTailor(user);
-      return send(200, { id: 'msg_x', type: 'message', role: 'assistant', model: j.model, content: [{ type: 'tool_use', id: 'tu_1', name: tool, input }], stop_reason: 'tool_use' });
+      return json(input);
     }
     if (/\/bot[^/]+\/sendMessage$/.test(u.pathname)) {
       const j = JSON.parse(body.toString());

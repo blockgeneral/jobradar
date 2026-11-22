@@ -222,7 +222,7 @@ const replies = workflow('JobRadarRepl0001', 'JobRadar · 4 Reply detection (opt
   a.node('📨 New inbox mail', 'n8n-nodes-base.emailReadImap', 2.1, [0, 0], {
     mailbox: 'INBOX', postProcessAction: 'nothing', format: 'simple', options: { customEmailConfig: '["UNSEEN"]', trackLastMessageId: true } }, { credentials: IMAP });
   tableGetAll(a, '🗃️ Applications', [220, 0]);
-  a.code('🔍 Plausible replies', [440, 0], O.replies_prefilter, ['util'], 'Only mail mentioning a company you applied to');
+  a.code('🔍 Plausible replies', [440, 0], O.replies_prefilter, ['util', 'prompts'], 'Only mail mentioning a company you applied to');
   anthropic(a, '🤖 Classify (Claude Haiku)', [660, 0], 'request', 60000);
   a.code('🏷️ Verdicts', [880, 0], O.replies_apply, ['util', 'prompts']);
   a.code('📝 Rows', [1100, -100], O.replies_rows, ['util']);

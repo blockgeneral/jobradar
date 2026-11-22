@@ -135,6 +135,10 @@ for (let i = 0; i < resp.length; i++) {
       warnings: ['Not screened — Claude call failed (' + String((r.error && (r.error.message || r.error)) || 'no output').slice(0, 90) + ')'] });
     continue;
   }
+  // JSON outputs can't enforce ranges/lengths in the schema — clamp here.
+  const pct = (v) => (typeof v === 'number' && !isNaN(v) ? Math.max(0, Math.min(100, Math.round(v))) : v);
+  fit.score = pct(fit.score); fit.skills_fit = pct(fit.skills_fit); fit.values_fit = pct(fit.values_fit);
+  for (const [k, n] of [['why', 4], ['gaps', 4], ['red_flags', 3], ['values_match', 4], ['keywords', 12]]) if (Array.isArray(fit[k])) fit[k] = fit[k].slice(0, n);
   const skills = fit.skills_fit != null ? fit.skills_fit : fit.score;
   const values = fit.values_fit != null ? fit.values_fit : 50;
   const hardNo = fit.location_eligible === 'no' || fit.english_only === 'no' || fit.comp_meets_floor === 'no';
