@@ -73,7 +73,7 @@ deploy_workflows() {
 
 # ───────────────────────────── setup ─────────────────────────────
 setup_claude() {
-  say ""; say "${B}1 · Claude API key${N}  ${D}(platform.claude.com → API keys. Claude Max/Team plans include monthly API credits — link your Console org under claude.ai Settings → Billing. Otherwise add ~\$10 credit.)${N}"
+  say ""; say "${B}1 · Claude API key${N}  ${D}(platform.claude.com → API keys. No subscription needed: add ~\$10 prepaid credit. Max/Ultra/Team plans include monthly API credits — link your Console org under claude.ai Settings → Billing.)${N}"
   local k cur; cur="$(env_get ANTHROPIC_API_KEY)"
   while :; do
     if [ -n "$cur" ] && yes "Keep the key already saved (…${cur: -4})?"; then k="$cur"; else k="$(asks 'Paste your key (sk-ant-…)')"; fi

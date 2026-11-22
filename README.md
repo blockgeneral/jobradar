@@ -37,7 +37,7 @@ About 20 minutes. Works on **Mac, Windows (via WSL) and Linux**. Click-by-click 
 ### What you need
 
 1. **Docker**: [Docker Desktop](https://www.docker.com/products/docker-desktop/) on Mac or Windows (Windows: with WSL/Ubuntu), Docker Engine on Linux. Open it.
-2. **A Claude API key**: [platform.claude.com](https://platform.claude.com) → API keys. Claude Max and Team plans include monthly API credits (link your Console org under claude.ai Settings → Billing); otherwise add ~$10 of credit. Expect roughly $10–20 a month (estimate; check your usage page after week one).
+2. **A Claude API key**: [platform.claude.com](https://platform.claude.com) → API keys, with ~$10 of prepaid credit. **No Claude subscription needed** — not Pro, not Max; JobRadar runs on pay-as-you-go API credit. If you happen to have Max, Ultra or Team, those plans include monthly API credits you can use instead (link your Console org under claude.ai Settings → Billing). Expect roughly $10–20 a month (estimate; check your usage page after week one).
 3. **Somewhere to be notified**: Telegram (a bot you create in a minute with @BotFather) and/or email (Gmail, Outlook, iCloud or any SMTP/IMAP mailbox with an app password).
 4. **Your CV as a PDF** (Word: Save as PDF · LinkedIn: your profile → More → Save to PDF).
 

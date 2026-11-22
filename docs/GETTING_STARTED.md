@@ -36,12 +36,12 @@ Tips: dragging your CV from Windows Explorer into the Ubuntu window works. To op
 ## 2. Get a Claude API key
 1. https://platform.claude.com → sign in.
 2. Credit:
-   - **On Claude Max or Team?** Your plan includes monthly API credits ($100 on Max 5x, $200 on Max 20x). On claude.ai go to **Settings → Billing → API credits → Link organization** and pick your Console org. No card needed. Unused credit expires each billing cycle; when it runs out, JobRadar pauses until the next cycle (nothing is charged).
+   - **On Claude Max, Ultra or Team?** Your plan includes monthly API credits ($100 on Max 5x, $200 on Max 20x). On claude.ai go to **Settings → Billing → API credits → Link organization** and pick your Console org. No card needed. Unused credit expires each billing cycle; when it runs out, JobRadar pauses until the next cycle (nothing is charged).
    - **Otherwise:** Console → **Billing** → add $10 credit.
 3. **API keys** → **Create key** → "Somewhere else (API key)" → name it `jobradar` → copy it (`sk-ant-…`). Don't paste it anywhere but the setup wizard.
 4. Recommended: Console → **Limits** → set a monthly spend limit (e.g. $50–75), so a misconfiguration can't burn your whole balance.
 
-Pro and other app-only plans don't include API use. Expect roughly $10–20/month.
+No subscription is needed: prepaid API credit is all JobRadar uses. (A Pro plan doesn't include API credit, so Pro users add credit like everyone else.) Expect roughly $10–20/month.
 
 ## 3. Choose where notifications go
 - **Telegram:** open **@BotFather** → `/newbot` → any name → copy the **token**.
