@@ -214,7 +214,8 @@ for (const it of $input.all()) {
   const at = Date.parse(e.date || '') || now;
   if (now - at > 3 * 864e5) continue; // old alerts (e.g. right after switching this on) aren't news
   const found = parseLinkedInAlert(e.textPlain || e.text || '', e.textHtml || e.html || '');
-  if (!found.length && /job/i.test(String(e.subject || '')) && !/applied|application|viewed/i.test(String(e.subject || ''))) unreadable++;
+  const fromAlerts = /jobalerts-noreply@linkedin\.com/i.test(JSON.stringify(e.from || ''));
+  if (!found.length && (fromAlerts || /job|hiring/i.test(String(e.subject || ''))) && !/applied|application|viewed/i.test(String(e.subject || ''))) unreadable++;
   for (const l of found) if (!leads.some((x) => x.id === l.id)) leads.push(l);
 }
 const out = [];

@@ -336,6 +336,15 @@ Unsubscribe: https://www.linkedin.com/comm/psettings/email-unsubscribe?x`;
     assert.equal(l[0].title, 'Account Executive, Mid-Market'); assert.equal(l[0].company, 'n8n'); assert.equal(l[0].location, 'Berlin, Germany (Remote)');
     assert.equal(l[1].title, 'Senior Account Executive'); assert.equal(l[1].company, 'Cool Co');
   });
+  const RT = fs.readFileSync(path.join(ROOT, 'test/fixtures/linkedin-alert.txt'), 'utf8'), RH = fs.readFileSync(path.join(ROOT, 'test/fixtures/linkedin-alert.html'), 'utf8');
+  t('💼 real LinkedIn format (Nov 2026): every job, badges skipped, HTML location wins', () => {
+    const txt = L.parseLinkedInAlert(RT, ''), html = L.parseLinkedInAlert('', RH), both = L.parseLinkedInAlert(RT, RH);
+    assert.equal(txt.length, 5); assert.equal(html.length, 5);
+    const win = txt.find((l) => l.company === 'WIN SOURCE'); assert.equal(win.title, 'Account Manager'); assert.equal(win.location, 'Netherlands'); // two badges after it
+    assert.equal(txt[0].company, 'Celonis'); assert.equal(txt[0].location, 'Amsterdam Area'); // "This company is actively hiring" skipped
+    assert.deepEqual(both.map((l) => l.location), ['Amsterdam Area (Hybrid)', 'Amsterdam', 'Amsterdam (Remote)', 'Netherlands (Remote)', 'Netherlands (Remote)']);
+    assert.equal(both[4].title, 'Account Manager – BeNeLux'); assert.equal(both[0].url, 'https://www.linkedin.com/jobs/view/4483065693/');
+  });
   t('💼 lead ↔ board posting: loose title match, no false match', () => {
     const jobs = [{ title: 'Sr. Account Executive (EMEA)' }, { title: 'Account Manager' }];
     assert.equal(L.matchLead({ title: 'Senior Account Executive' }, jobs).title, 'Sr. Account Executive (EMEA)');
@@ -400,7 +409,8 @@ Unsubscribe: https://www.linkedin.com/comm/psettings/email-unsubscribe?x`;
   const st2 = {};
   const bad = await runNode(OTH.linkedin_parse, { input: [{ date: new Date().toUTCString(), subject: 'Account Executive at Acme and 9 more jobs', textPlain: 'something new and unreadable', textHtml: '<p>nope</p>' }], state: st2 });
   const bad2 = await runNode(OTH.linkedin_parse, { input: [{ date: new Date().toUTCString(), subject: 'Account Executive at Acme and 9 more jobs', textPlain: 'x' }], state: st2 });
-  t('💼 an alert it can\'t read → a heads-up the same day, once a day', () => { assert.ok(bad.some((x) => x.json.kind === 'tg_text' && /LinkedIn alert/.test(x.json.tg.text))); assert.equal(bad2.length, 0); });
+  const bad3 = await runNode(OTH.linkedin_parse, { input: [{ date: new Date().toUTCString(), from: { value: [{ address: 'jobalerts-noreply@linkedin.com', name: 'LinkedIn Job Alerts' }] }, subject: 'Grafana Labs is hiring: Major Account Executive', textPlain: 'x' }], state: {} });
+  t('💼 an alert it can\'t read → a heads-up the same day, once a day (any subject from the alert sender)', () => { assert.ok(bad.some((x) => x.json.kind === 'tg_text' && /LinkedIn alert/.test(x.json.tg.text))); assert.equal(bad2.length, 0); assert.ok(bad3.length); });
 }
 
 // 💬 chat: staged edits, saved only after the user's own "yes"

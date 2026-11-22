@@ -340,17 +340,18 @@ function preFilter(job, targets, now) {
 // ---- LinkedIn job alerts (emails) → leads. We never fetch LinkedIn pages; we only read the alert email. ----
 // A lead: { id, title, company, location, url }. Reads the plain-text part and the HTML part; whichever finds more wins.
 function liNoise(l) {
-  return /^(view job|apply|easy apply|promoted|actively (recruiting|hiring)|be an early applicant|new|\d+ (school )?alumn|\d+ connections?|.*\bconnections? work here|your job alert|see all jobs|manage (job )?alerts|unsubscribe|this email was intended|learn why|help|©|linkedin|jobs? (similar|you may|based on)|top job picks|fast growing|in your network|.*\bapplicants?$|.*\bcompany alumni$|recently posted|\$|€|£)/i.test(l);
+  return /^(view job|apply|easy apply|promoted|actively (recruiting|hiring)|this company is actively hiring|be an early applicant|new|\d+ (school )?alumn|\d+ connections?|.*\bconnections? work here|your job alert|see all jobs|manage (job )?alerts|unsubscribe|this email was intended|learn why|help|©|linkedin|jobs? (similar|you may|based on)|top job picks|fast growing|in your network|.*\bapplicants?$|.*\bcompany alumni$|recently posted|\$|€|£)/i.test(l);
 }
 function parseLinkedInAlert(textPlain, textHtml) {
   const idOf = (u) => (String(u).match(/linkedin\.com\/(?:comm\/)?jobs\/view\/(?:[^\/?#]*?-)?(\d{6,})/i) || [])[1];
-  const clean = (s) => decodeEntities(String(s || '')).replace(/[ ​‌‍﻿]/g, ' ').replace(/[ \t]+/g, ' ').trim();
+  const named = { middot: '·', bull: '•', ndash: '–', mdash: '—', rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“', hellip: '…', euro: '€', pound: '£' };
+  const clean = (s) => decodeEntities(String(s || '').replace(/&([a-z]+);/g, (m, n) => named[n] || m)).replace(/[\u00a0\u200b\u200c\u200d\ufeff]/g, ' ').replace(/[ \t]+/g, ' ').trim();
   const toLead = (id, lines) => {
     const ls = lines.map(clean).filter((l) => l && !liNoise(l) && !/^https?:\/\//i.test(l) && !/^[-=_*·•]{3,}$/.test(l));
     if (!ls.length) return null;
     let [title, company, location] = ls;
-    // "Acme · Vienna, Austria (Remote)" on one line
-    if (company && / [·•|] /.test(company) && !location) { const p = company.split(/ [·•|] /); company = p[0]; location = p.slice(1).join(' · '); }
+    // HTML cards put "Acme · Vienna, Austria (Remote)" on one line (the next line is a badge or footer)
+    if (company && / [·•] /.test(company)) { const p = company.split(/ [·•] /); company = p[0]; location = p.slice(1).join(' · '); }
     if (!title || !company) return null;
     return { id, title: title.slice(0, 160), company: company.slice(0, 120), location: String(location || '').slice(0, 160), url: `https://www.linkedin.com/jobs/view/${id}/` };
   };
@@ -361,7 +362,7 @@ function parseLinkedInAlert(textPlain, textHtml) {
     for (const raw of lines) {
       const id = idOf(raw);
       if (id) {
-        if (!seen.has(id)) { const before = block.filter((l) => clean(l) && !/^view job:?$/i.test(clean(l.replace(/https?:\/\/\S+/g, '')))); const lead = toLead(id, before.slice(-4)); if (lead) { out.push(lead); seen.add(id); } }
+        if (!seen.has(id)) { const before = block.filter((l) => clean(l) && !/^view job:?$/i.test(clean(l.replace(/https?:\/\/\S+/g, '')))); const lead = toLead(id, before.filter((l) => !liNoise(clean(l))).slice(0, 3)); if (lead) { out.push(lead); seen.add(id); } }
         block = [];
       } else if (/^\s*[-=_]{5,}\s*$/.test(raw)) block = [];
       else block.push(raw.replace(/https?:\/\/\S+/g, ''));
@@ -390,8 +391,9 @@ function parseLinkedInAlert(textPlain, textHtml) {
     }
     return out;
   };
+  // the HTML card says Remote / Hybrid / On-site in the location, so it wins unless it found fewer jobs
   const a = fromText(textPlain), b = fromHtml(textHtml);
-  return b.length > a.length ? b : a;
+  return b.length && b.length >= a.length ? b : a;
 }
 
 // A LinkedIn lead as a job of its own: title/company/location only (used when its posting isn't on a public job board)
