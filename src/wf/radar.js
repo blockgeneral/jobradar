@@ -141,9 +141,16 @@ for (let i = 0; i < resp.length; i++) {
   for (const [k, n] of [['why', 4], ['gaps', 4], ['red_flags', 3], ['values_match', 4], ['keywords', 12]]) if (Array.isArray(fit[k])) fit[k] = fit[k].slice(0, n);
   const skills = fit.skills_fit != null ? fit.skills_fit : fit.score;
   const values = fit.values_fit != null ? fit.values_fit : 50;
+  // Safety net: the board said "anywhere" but the text says one country — never let that pass as a clean "yes".
+  const lock = countryLock(job.description, files['search_profile.md']);
+  const lockWarn = [];
+  if (lock && fit.location_eligible === 'yes') {
+    fit.location_eligible = 'unclear';
+    lockWarn.push(`Location: posting reads ${lock.country}-only (${lock.evidence}), though the board says "${job.location || 'remote'}". Check before applying.`);
+  }
   const hardNo = fit.location_eligible === 'no' || fit.english_only === 'no' || fit.comp_meets_floor === 'no';
   if (hardNo || skills < (job.dream ? minS - 10 : minS) || values < minV) continue;
-  (job.dream || fit.score >= instantAt ? instant : digest).push({ job, fit, warnings: [] });
+  (job.dream || fit.score >= instantAt ? instant : digest).push({ job, fit, warnings: lockWarn });
 }
 instant.sort((a, b) => (b.job.dream - a.job.dream) || ((b.fit.score || 0) - (a.fit.score || 0)));
 const cap = preview ? ((settings.preview && settings.preview.count) || 3) : (sc.maxTailoredPerRun || 4);

@@ -3,7 +3,7 @@
 const fs = require('fs'); const path = require('path'); const assert = require('assert');
 const ROOT = path.join(__dirname, '..');
 const libSrc = ['util', 'sources', 'prompts', 'guard', 'notify'].map((n) => fs.readFileSync(path.join(ROOT, 'src/lib', n + '.js'), 'utf8')).join('\n');
-const L = new Function('$env', libSrc + '; return { normalize, watchList, normName, preFilter, checkTailoring, keywordCoverage, toIso, detectAts, companiesFromSettings, buildRequests, parseBody, telegramCard, emailForJob, computeReport, telegramReport, inQuietHours, shortHash, fillCoverLetter };')({ NOTIFY_CHANNELS: 'telegram,email' });
+const L = new Function('$env', libSrc + '; return { normalize, watchList, normName, preFilter, checkTailoring, keywordCoverage, toIso, detectAts, companiesFromSettings, buildRequests, parseBody, telegramCard, emailForJob, computeReport, telegramReport, inQuietHours, shortHash, fillCoverLetter, countryLock };')({ NOTIFY_CHANNELS: 'telegram,email' });
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('  ✔ ' + name); };
 const now = Date.now();
 
@@ -182,5 +182,16 @@ async function runNode(code, { input = [], nodes = {}, env = {}, state = {} }) {
   const wmail = await runNode(OTH.inbox_parse, { input: [{ subject: 'JobRadar WATCH Cool Co JR-CMD' }] });
   t('email ➕ Watch command', () => assert.equal(wmail[0].json.watch.name, 'Cool Co'));
   t('jr ids are stable and short', () => { assert.equal(L.shortHash('ashby:n8n:1'), L.shortHash('ashby:n8n:1')); assert.equal(L.shortHash('x').length, 6); });
-  console.log(`\nunit OK (${n} checks)`);
+  
+// countryLock: board says "anywhere", posting text says one country
+{
+  const alexProfile = '# Who I am (one line)\nAccount Executive based in Vienna, Austria.\n';
+  const usProfile = '# Who I am (one line)\nAE based in Austin, Texas, United States.\n';
+  t('countryLock flags US pay zones', () => assert.equal((L.countryLock('Zone 3: All other US locations - $116,000', alexProfile) || {}).country, 'US'));
+  t('countryLock flags US work authorization', () => assert.equal((L.countryLock('You must be authorized to work in the United States.', alexProfile) || {}).country, 'US'));
+  t('countryLock flags UK right to work', () => assert.equal((L.countryLock('Candidates must have the right to work in the UK.', alexProfile) || {}).country, 'UK'));
+  t('countryLock ignores truly global roles', () => assert.equal(L.countryLock('Fully remote; we hire anywhere through an employer of record. Pay in EUR.', alexProfile), null));
+  t('countryLock stays quiet for candidates who live there', () => assert.equal(L.countryLock('Zone 3: All other US locations', usProfile), null));
+}
+console.log(`\nunit OK (${n} checks)`);
 })().catch((e) => { console.error(e); process.exit(1); });

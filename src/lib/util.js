@@ -115,3 +115,26 @@ function trackerRow(job, fit, extra) {
     applied_at: '', outcome: '', outcome_at: '',
   }, extra || {});
 }
+
+// Postings that only hire in one country, whatever the board's location label says.
+// Returns { country, evidence } or null. Conservative: needs an explicit signal, not just a US city.
+function countryLock(text, profileMd) {
+  const t = String(text || '');
+  // The candidate's own one-line "who I am" (first line under the first heading of the search profile).
+  const who = (String(profileMd || '').replace(/<!--[\s\S]*?-->/g, '').match(/^#[^\n]*\n+([^\n#]+)/m) || [, ''])[1];
+  const livesIn = { US: /\b(United States|USA|U\.S\.|US-based|based in the US)\b/i, UK: /\b(United Kingdom|UK|London|England|Scotland)\b/, Canada: /\bCanada\b/i };
+  const rules = [
+    ['US', /(geographic(al)? pay zones?|pay zones?)[\s\S]{0,400}?(United States|U\.S\.|US locations)/i],
+    ['US', /all other U\.?S\.? (locations|cities|metro)/i],
+    ['US', /(must|need to|required to) (be )?(legally )?(authori[sz]ed|eligible) to work in the (United States|U\.S\.?|US)\b/i],
+    ['US', /(must|need to) (reside|live|be based) in the (United States|U\.S\.?|US)\b/i],
+    ['US', /\b401\(?k\)?/i],
+    ['UK', /(must have|require[sd]?) (the )?(full )?right to work in the (UK|United Kingdom)/i],
+    ['Canada', /(must|need to) (reside|live|be based) in Canada/i],
+  ];
+  for (const [country, re] of rules) {
+    const m = t.match(re);
+    if (m && !(livesIn[country] && livesIn[country].test(who))) return { country, evidence: '"' + m[0].replace(/\s+/g, ' ').slice(0, 80) + '"' };
+  }
+  return null;
+}
