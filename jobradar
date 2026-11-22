@@ -276,7 +276,11 @@ cmd_status()   {
 }
 cmd_update()   {
   need_docker
-  [ -d .git ] && { git pull --ff-only || die "git pull failed — resolve it, then run ./jobradar update again"; }
+  # pull first, then restart with the NEW script — bash keeps running the old one otherwise
+  if [ -d .git ] && [ "${1:-}" != --pulled ]; then
+    git pull --ff-only || die "git pull failed — resolve it, then run ./jobradar update again"
+    exec "$0" update --pulled
+  fi
   dc pull --quiet n8n gotenberg; dc build --quiet renderer; dc stop n8n >/dev/null 2>&1 || true
   deploy_workflows; dc up -d >/dev/null; wait_up && ok "updated — your tracker and settings were kept"
 }
@@ -310,6 +314,6 @@ EOF
 
 case "${1:-help}" in
   setup) cmd_setup;; run) cmd_run;; report) shift; cmd_report "$@";; start) cmd_start;; stop) cmd_stop;; restart) cmd_restart;;
-  logs) shift; cmd_logs "$@";; status) cmd_status;; update) cmd_update;; rerender) shift; cmd_rerender "$@";; companies) cmd_companies;; chat) cmd_chat;; import-cv) cmd_import;;
+  logs) shift; cmd_logs "$@";; status) cmd_status;; update) shift; cmd_update "$@";; rerender) shift; cmd_rerender "$@";; companies) cmd_companies;; chat) cmd_chat;; import-cv) cmd_import;;
   *) cmd_help;;
 esac
