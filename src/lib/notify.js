@@ -26,6 +26,25 @@ function topChecks(c, n) {
   return [].concat(c.warnings || [], c.issues || [], (c.review && c.review.verify) || []).filter(Boolean).slice(0, n);
 }
 
+// Who to reach out to: the named person when the posting gives one (their profile if linked, else a search for
+// that exact name), and a generic LinkedIn search for whichever side (recruiter / hiring team) is still unknown.
+function contactLinks(job, fit, review) {
+  const f = fit || {};
+  const desc = String(job.description || '');
+  const urlInText = (desc.match(/https?:\/\/(?:[a-z]{2,3}\.)?linkedin\.com\/in\/[A-Za-z0-9\-_%]+\/?/i) || [])[0] || '';
+  const url = /linkedin\.com\/in\//i.test(f.contact_url || '') ? f.contact_url : urlInText;
+  const name = String(f.contact_name || '').trim();
+  const out = [];
+  if (name || url) {
+    const first = name ? name.split(/\s+/).slice(0, 2).join(' ') : 'Contact';
+    const role = f.contact_role === 'recruiter' ? 'recruiter' : f.contact_role === 'hiring_manager' ? 'hiring manager' : '';
+    out.push({ text: `👤 ${first}${role ? ' (' + role + ')' : ''}`.slice(0, 40), url: url || liSearch(`${name} ${job.company}`) });
+  }
+  if (f.contact_role !== 'recruiter') out.push({ text: '🔎 Recruiters', url: liSearch(`${job.company} recruiter`) });
+  if (f.contact_role !== 'hiring_manager') out.push({ text: '🔎 Hiring team', url: liSearch((review && review.team_search) || `${job.company} hiring manager`) });
+  return out;
+}
+
 function telegramCard(c, prefs) {
   const p = prefs || {};
   const { job, fit, review } = c;
@@ -53,9 +72,9 @@ function telegramCard(c, prefs) {
   const kb = [[{ text: '🚀 Apply', url: job.applyUrl || job.url }]];
   if (job.url && job.url !== job.applyUrl) kb[0].push({ text: '📄 Job post', url: job.url });
   if (b.linkedinSearch) {
-    const row = [{ text: '🔎 Recruiters', url: liSearch(`${job.company} recruiter`) }];
-    row.push({ text: '🔎 Hiring team', url: liSearch((review && review.team_search) || `${job.company} hiring manager`) });
-    kb.push(row);
+    const links = contactLinks(job, fit, review);
+    if (links[0] && links[0].text.startsWith('👤')) { kb.push([links[0]]); links.shift(); }
+    if (links.length) kb.push(links);
   }
   if (b.copyOutreachNote && review && review.outreach_note) kb.push([{ text: '📋 Copy LinkedIn note', copy_text: { text: String(review.outreach_note).slice(0, 256) } }]);
   if (b.statusButtons) kb.push([{ text: '✅ Applied', callback_data: 'ap:' + c.jrId }, { text: '⏭ Skip', callback_data: 'sk:' + c.jrId }]);
@@ -87,7 +106,7 @@ function emailForJob(c, prefs, to) {
   ${fit.company_note ? `<div style="font-size:13px;color:#5b6b7f;margin-bottom:8px">${escHtml(fit.company_note)}</div>` : ''}
   ${fit.why && fit.why[0] ? `<div style="margin-bottom:12px">✨ ${escHtml(fit.why[0])}</div>` : ''}
   ${checks.length ? `<div style="background:#fff7e6;border:1px solid #f5d38b;border-radius:8px;padding:10px 12px;margin-bottom:14px"><b>⚠️ Check before sending</b><ul style="margin:6px 0 0;padding-left:18px">${li(checks)}</ul></div>` : ''}
-  <div>${btn(job.applyUrl || job.url, '🚀 Apply', true)}${job.url && job.url !== job.applyUrl ? btn(job.url, '📄 Job post') : ''}${b.linkedinSearch ? btn(liSearch(`${job.company} recruiter`), '🔎 Recruiters') + btn(liSearch((review && review.team_search) || `${job.company} hiring manager`), '🔎 Hiring team') : ''}</div>
+  <div>${btn(job.applyUrl || job.url, '🚀 Apply', true)}${job.url && job.url !== job.applyUrl ? btn(job.url, '📄 Job post') : ''}${b.linkedinSearch ? contactLinks(job, fit, review).map((l) => btn(l.url, l.text)).join('') : ''}</div>
   ${b.statusButtons ? `<div style="margin-top:4px">${btn(mailto(to, 'APPLIED', c.jrId, 'applied'), '✅ I applied')}${btn(mailto(to, 'SKIP', c.jrId, 'skipped'), '⏭ Skip')}</div>` : ''}
   <div style="font-size:12px;color:#7a8696;margin-top:6px">📎 Your tailored resume and cover letter are attached.</div>
  </div>

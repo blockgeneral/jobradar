@@ -3,7 +3,7 @@
 const fs = require('fs'); const path = require('path'); const assert = require('assert');
 const ROOT = path.join(__dirname, '..');
 const libSrc = ['util', 'sources', 'prompts', 'guard', 'notify'].map((n) => fs.readFileSync(path.join(ROOT, 'src/lib', n + '.js'), 'utf8')).join('\n');
-const L = new Function('$env', libSrc + '; return { normalize, watchList, normName, preFilter, checkTailoring, keywordCoverage, toIso, detectAts, companiesFromSettings, buildRequests, parseBody, telegramCard, emailForJob, computeReport, telegramReport, inQuietHours, shortHash, fillCoverLetter, countryLock, claimCheck };')({ NOTIFY_CHANNELS: 'telegram,email' });
+const L = new Function('$env', libSrc + '; return { normalize, watchList, normName, preFilter, checkTailoring, keywordCoverage, toIso, detectAts, companiesFromSettings, buildRequests, parseBody, telegramCard, emailForJob, computeReport, telegramReport, inQuietHours, shortHash, fillCoverLetter, countryLock, claimCheck, contactLinks };')({ NOTIFY_CHANNELS: 'telegram,email' });
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('  ✔ ' + name); };
 const now = Date.now();
 
@@ -221,6 +221,23 @@ async function runNode(code, { input = [], nodes = {}, env = {}, state = {} }) {
   const company = { source: 'ashby', company: 'Quiet Co', slug: 'quiet', method: 'GET', url: 'x', _candidate: cand };
   const none = await runNode(RAD.source_health, { input: [{ data: { jobs: [] } }], nodes: { '⚙️ Plan run': [company] }, state: { yield: {} } });
   t('🩺 company page with no openings is fine', () => assert.equal(none.length, 0));
+}
+
+// 👤 named contact: link the person when the posting names them, generic searches otherwise
+{
+  const job = { company: 'n8n', description: 'Great role.' };
+  t('👤 nobody named → recruiter + hiring-team searches', () => assert.deepEqual(L.contactLinks(job, {}, null).map((l) => l.text), ['🔎 Recruiters', '🔎 Hiring team']));
+  t('👤 named hiring manager → search for that exact person + recruiter search', () => {
+    const l = L.contactLinks(job, { contact_name: 'Jane Doe', contact_role: 'hiring_manager' }, null);
+    assert.deepEqual(l.map((x) => x.text), ['👤 Jane Doe (hiring manager)', '🔎 Recruiters']);
+    assert.ok(/Jane%20Doe%20n8n|Jane\+Doe\+n8n/.test(l[0].url), l[0].url);
+  });
+  t('👤 LinkedIn profile in the posting → direct link', () => {
+    const l = L.contactLinks({ company: 'n8n', description: 'Questions? Reach out to Sam: https://www.linkedin.com/in/sam-recruits/ thanks' }, { contact_name: 'Sam Lee', contact_role: 'recruiter' }, null);
+    assert.equal(l[0].url, 'https://www.linkedin.com/in/sam-recruits/');
+    assert.deepEqual(l.map((x) => x.text), ['👤 Sam Lee (recruiter)', '🔎 Hiring team']);
+  });
+  t('👤 a made-up non-LinkedIn URL is ignored', () => assert.ok(!/evil/.test(L.contactLinks(job, { contact_name: 'Jane Doe', contact_url: 'https://evil.example/x' }, null)[0].url)));
 }
 console.log(`\nunit OK (${n} checks)`);
 })().catch((e) => { console.error(e); process.exit(1); });

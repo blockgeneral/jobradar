@@ -54,7 +54,7 @@ function mockScore(user) {
     why: /Backend/.test(t) ? ['Go + event-driven checkout rewrite maps directly to their platform APIs'] : ['Full-cycle mid-market AE in a technical product — matches their sales-led experience', 'Annual-contract negotiation & technical discovery are core to the role'],
     gaps: ['Asks for MEDDPICC — used in pieces, not formally trained'], red_flags: [],
     keywords: ['full-cycle', 'mid-market', 'discovery', 'annual contracts', 'MEDDPICC', 'Salesforce', 'technical buyers', 'EMEA'],
-    hiring_contact: good ? '' : '', _title: t,
+    contact_name: /n8n/i.test(c) ? 'Jane Doe' : '', contact_role: /n8n/i.test(c) ? 'hiring_manager' : 'none', contact_title: /n8n/i.test(c) ? 'Head of Sales EMEA' : '', contact_url: '', _title: t,
   };
 }
 function mockTailor(user) {

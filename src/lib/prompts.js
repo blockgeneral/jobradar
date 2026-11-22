@@ -66,7 +66,10 @@ function scoreTool() { return {
       gaps: { type: 'array', items: { type: 'string' }, maxItems: 4, description: 'Honest gaps a recruiter would notice.' },
       red_flags: { type: 'array', items: { type: 'string' }, maxItems: 3 },
       keywords: { type: 'array', items: { type: 'string' }, maxItems: 12, description: 'The 8-12 skills/terms an ATS or recruiter would screen for in this posting (exact wording from the posting).' },
-      hiring_contact: { type: 'string', description: 'Name/title of hiring manager or recruiter if the posting mentions one, else empty.' },
+      contact_name: { type: 'string', description: 'Full name of the recruiter or hiring manager if the posting names one (e.g. "You will report to Jane Doe" or "Questions? Contact John Smith"). Empty if no person is named. Never guess.' },
+      contact_role: { type: 'string', enum: ['recruiter', 'hiring_manager', 'other', 'none'], description: 'What the named person is. none = nobody named.' },
+      contact_title: { type: 'string', description: 'Their job title if the posting gives it (e.g. "Head of Sales EMEA"), else empty.' },
+      contact_url: { type: 'string', description: 'Their LinkedIn profile URL if the posting includes one (linkedin.com/in/...), else empty. Never construct one.' },
     },
     required: ['location_eligible', 'english_only', 'comp_meets_floor', 'role_family', 'seniority_fit', 'skills_fit', 'values_fit', 'values_match', 'company_note', 'score', 'why', 'gaps', 'keywords'],
   },
@@ -117,7 +120,7 @@ Hard rules:
 3. Write like a sharp human, not a template: short concrete sentences, no buzzword stacking, no "passionate", "thrilled", "dynamic", "results-driven", "leverage", no em-dash chains.
 4. Angle: if the experience inventory has a "Positioning by role type" section, start from the angle that matches this job and use its best proof points.
 5. ATS: mirror the posting's exact terms only where they are literally true of the candidate's experience (e.g. "full-cycle", "mid-market", "annual contracts", "discovery").`;
-  const user = `<experience_inventory>\n${inventoryMd ? stripHtmlComments(inventoryMd) : '(none — use the base resume only)'}\n</experience_inventory>\n\n<base_resume>\n${resumeMd}\n</base_resume>\n\n<base_cover_letter>\n${coverMd}\n</base_cover_letter>\n\n<search_profile>\n${stripHtmlComments(profileMd)}\n</search_profile>\n\n<job>\nCompany: ${job.company}\nTitle: ${job.title}\nLocation: ${job.location || 'not stated'} | Workplace: ${job.workplaceType || (job.remote ? 'remote' : 'not stated')} | Salary: ${job.salary || 'not stated'}\n\n${truncate(job.description, 12000)}\n</job>\n\n<screening_notes>\nRole family: ${fit.role_family} | Seniority fit: ${fit.seniority_fit}\nATS keywords from the posting: ${(fit.keywords || []).join(', ')}\nGaps found: ${(fit.gaps || []).join(' | ')}\n</screening_notes>\n\nProduce the tailored application.`;
+  const user = `<experience_inventory>\n${inventoryMd ? stripHtmlComments(inventoryMd) : '(none — use the base resume only)'}\n</experience_inventory>\n\n<base_resume>\n${resumeMd}\n</base_resume>\n\n<base_cover_letter>\n${coverMd}\n</base_cover_letter>\n\n<search_profile>\n${stripHtmlComments(profileMd)}\n</search_profile>\n\n<job>\nCompany: ${job.company}\nTitle: ${job.title}\nLocation: ${job.location || 'not stated'} | Workplace: ${job.workplaceType || (job.remote ? 'remote' : 'not stated')} | Salary: ${job.salary || 'not stated'}\n\n${truncate(job.description, 12000)}\n</job>\n\n<screening_notes>\nRole family: ${fit.role_family} | Seniority fit: ${fit.seniority_fit}\nATS keywords from the posting: ${(fit.keywords || []).join(', ')}\nGaps found: ${(fit.gaps || []).join(' | ')}${fit.contact_name ? `\nNamed contact in the posting: ${fit.contact_name}${fit.contact_title ? ', ' + fit.contact_title : ''} (${fit.contact_role || 'contact'}) — address the outreach note to them by first name.` : ''}\n</screening_notes>\n\nProduce the tailored application.`;
   return structuredRequest(tailorTool(), {
     model: model || 'claude-sonnet-5-5',
     max_tokens: 20000,
