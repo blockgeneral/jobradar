@@ -83,7 +83,16 @@ const now = Date.now();
 const state = $getWorkflowStaticData('global');
 state.seen = state.seen || {};
 const known = new Set();
-for (const r of tracked) { known.add(r.uid); if (r.alt_key) known.add('alt:' + r.alt_key); }
+const carded = new Set(); // jobs that actually went out as a card (tailored files exist)
+for (const r of tracked) {
+  known.add(r.uid); if (r.alt_key) known.add('alt:' + r.alt_key);
+  if (r.folder) { carded.add(r.uid); if (r.alt_key) carded.add('alt:' + r.alt_key); }
+}
+// Dream companies: a job is "done" once it was screened or filtered for a reason other than its age.
+// Everything seen before this rule existed (or on the very first run) counts as done — no burst of old roles.
+state.dreamDone = state.dreamDone || {};
+if (state.dreamDoneBefore == null) state.dreamDoneBefore = now;
+const dreamDone = (j) => !!state.dreamDone[j.uid] || (state.seen[j.uid] != null && state.seen[j.uid] <= state.dreamDoneBefore);
 const firstInstall = !state.initialized && tracked.length === 0;
 const f = settings.filters || {};
 const sc = settings.scoring || {};
@@ -111,6 +120,16 @@ for (const j of jobs) {
   if (batch.has(j.uid) || batch.has('alt:' + j.altKey)) { stats.duplicate = (stats.duplicate || 0) + 1; continue; }
   batch.add(j.uid); batch.add('alt:' + j.altKey);
   if (j.manual) { passed.push(j); continue; } // you asked for this one: no dedupe, no filters
+  if (j.dream && state.initialized) {
+    // Reposts: a dream-company role you never got a card for comes through again, whatever its date says
+    // (a repost often keeps the old date, or a new ID with the same title).
+    if (carded.has(j.uid) || carded.has('alt:' + j.altKey) || dreamDone(j)) { stats.seen = (stats.seen || 0) + 1; continue; }
+    const repost = known.has(j.uid) || known.has('alt:' + j.altKey) || state.seen[j.uid] || state.seen['alt:' + j.altKey];
+    const why = preFilter(j, Object.assign({}, settings, { filters: Object.assign({}, f, { freshHours: Infinity }) }), now);
+    if (why) { stats[why] = (stats[why] || 0) + 1; mark(j); state.dreamDone[j.uid] = now; continue; }
+    if (repost) stats.repost = (stats.repost || 0) + 1;
+    passed.push(j); continue;
+  }
   if (known.has(j.uid) || known.has('alt:' + j.altKey) || state.seen[j.uid] || state.seen['alt:' + j.altKey]) { stats.seen = (stats.seen || 0) + 1; continue; }
   const age = hoursSince(j.postedAt, now);
   // never flood: on the very first run only recent jobs (or undated ones at dream companies) go through
@@ -122,9 +141,10 @@ for (const j of jobs) {
 passed.sort((a, b) => (b.dream - a.dream) || ((b.postedAt || '').localeCompare(a.postedAt || '')));
 const cap = sc.maxScoredPerRun || 40;
 const toScore = passed.slice(0, cap);
-toScore.forEach(mark);
+toScore.forEach((j) => { mark(j); if (j.dream) state.dreamDone[j.uid] = now; });
 stats.toScore = toScore.length; stats.deferred = passed.length - toScore.length;
 for (const k of Object.keys(state.seen)) if (now - state.seen[k] > 90 * 864e5) delete state.seen[k];
+for (const k of Object.keys(state.dreamDone)) if (now - state.dreamDone[k] > 90 * 864e5) delete state.dreamDone[k];
 state.initialized = true;
 state.lastRun = { at: new Date(now).toISOString(), stats, firstInstall };
 if (!manualUrl) await postStatus(this.helpers, 'normalize', { run: $execution.id, stats });
@@ -191,7 +211,7 @@ const brief = (m) => ({ company: m.job.company, title: m.job.title, score: m.fit
 await postStatus(this.helpers, 'gate', { run: $execution.id, screened: resp.length, instant: instant.map(brief), digest: digest.map(brief),
   manualUrl: $('⚙️ Plan run').first().json._candidate.manualUrl || undefined, manual: manualResult || undefined });
 const cap = preview ? ((settings.preview && settings.preview.count) || 3) : (sc.maxTailoredPerRun || 4);
-for (const m of instant.slice(cap)) { delete state.seen[m.job.uid]; delete state.seen['alt:' + m.job.altKey]; } // over the cap: picked up next run
+for (const m of instant.slice(cap)) { delete state.seen[m.job.uid]; delete state.seen['alt:' + m.job.altKey]; if (state.dreamDone) delete state.dreamDone[m.job.uid]; } // over the cap: picked up next run
 return instant.slice(0, cap).map((m) => ({ json: Object.assign(m, { tier: 'instant', preview,
   tailorRequest: tailorRequest(m.job, m.fit, files['resume_base.md'], files['cover_letter_base.md'], files['search_profile.md'], files['experience_inventory.md'], model) }) }))
   .concat(digest.map((m) => ({ json: Object.assign(m, { tier: 'digest' }) })));

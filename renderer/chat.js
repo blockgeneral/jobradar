@@ -36,7 +36,7 @@ const TOOLS = [
     input_schema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } },
   { name: 'add_never_claim', description: 'Stage a rule for things applications must never claim or say (e.g. a skill they lack, a wording they dislike).',
     input_schema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } },
-  { name: 'change_settings', description: 'Stage changes to settings.json by dotted path, e.g. "scoring.instantAt" = 60, "hiringCafe.enabled" = false, "notifications.quietHours.from" = "23:00", "filters.titleExclude" = [..]. Read settings first. For companies use watch_company.',
+  { name: 'change_settings', description: 'Stage changes to settings.json by dotted path, e.g. "scoring.instantAt" = 60 (the "ping me above X" setting), "hiringCafe.enabled" = false, "notifications.quietHours.from" = "23:00", "filters.titleExclude" = [..]. Read settings first. For companies use watch_company.',
     input_schema: { type: 'object', properties: { changes: { type: 'array', items: { type: 'object', properties: { path: { type: 'string' }, value: { description: 'New JSON value' } }, required: ['path', 'value'] } }, why: { type: 'string' } }, required: ['changes', 'why'] } },
   { name: 'watch_company', description: 'Stage adding, starring (dream) or removing a watched company. url = their careers/job-board page if the user gave one.',
     input_schema: { type: 'object', properties: { name: { type: 'string' }, url: { type: 'string' }, dream: { type: 'boolean' }, remove: { type: 'boolean' } }, required: ['name'] } },
@@ -124,16 +124,26 @@ function settingsBase(s) {
   return JSON.parse(prev.length ? prev[prev.length - 1].after : (fs.readFileSync(path.join(PROJECT, 'settings.json'), 'utf8')));
 }
 
+// Settings that look like "only ping me above X" but do something harsher. Shown with the staged change, whatever the AI said.
+const SETTING_WARNINGS = {
+  'notifications.minScore': (v) => (Number(v) > 0 ? `notifications.minScore drops every match below ${v} after it's already been tailored (you still pay for it), and it silences dream companies too. To only get instant pings above ${v}, change scoring.instantAt instead — the rest still lands in the daily list and dream companies always ping.` : null),
+};
+
 function stageSettings(s, changes, why) {
   let cfg;
   try { cfg = settingsBase(s); } catch (e) { return { error: 'settings.json is not valid JSON: ' + e.message }; }
   const lines = [];
+  const warnings = [];
   for (const c of changes || []) {
     try { const before = setPath(cfg, c.path, c.value); lines.push(`${c.path}: ${JSON.stringify(before)} → ${JSON.stringify(c.value)}`); }
     catch (e) { return { error: `can't set ${c.path}: ${e.message}` }; }
+    const w = SETTING_WARNINGS[String(c.path).trim()] && SETTING_WARNINGS[String(c.path).trim()](c.value);
+    if (w) warnings.push(w);
   }
-  s.pending.push({ key: 'settings', file: 'settings.json', why, lines, after: JSON.stringify(cfg, null, 2) + '\n' });
-  return { staged: true, changes: lines };
+  s.pending.push({ key: 'settings', file: 'settings.json', why, lines, warnings, after: JSON.stringify(cfg, null, 2) + '\n' });
+  return warnings.length
+    ? { staged: true, changes: lines, warning: warnings.join(' '), tell_user: 'Explain this warning in plain words before asking them to save, and offer scoring.instantAt instead unless they clearly want lower matches gone completely.' }
+    : { staged: true, changes: lines };
 }
 
 const normName = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -184,7 +194,7 @@ function savePending(s, lastUser) {
 function previewPending(pending) {
   const out = [];
   for (const p of pending) {
-    if (p.lines) for (const l of p.lines) out.push(`• **${p.file}** — ${l}`);
+    if (p.lines) { for (const l of p.lines) out.push(`• **${p.file}** — ${l}`); for (const w of p.warnings || []) out.push(`   ⚠️ ${w}`); }
     else if (!p.find) out.push(`• **${p.file}** — add: “${String(p.replace).replace(/^[-\s]+/, '').slice(0, 300)}”`);
     else out.push(`• **${p.file}**\n   before: “${p.find.slice(0, 300)}”\n   after: “${p.replace.slice(0, 300)}”`);
   }
@@ -206,7 +216,7 @@ function readStatus(hours) {
   }
   const last = rows.length ? rows[rows.length - 1].at : null;
   return { hours: hours || 24, runs, last_run: last, totals: sum, matches: matches.slice(-10), broken_sources: problems,
-    legend: 'fetched = jobs seen on all sources; seen = already known; the other counts are filter reasons (title, location, language, stale); toScore = sent to the AI screener' };
+    legend: 'fetched = jobs seen on all sources; seen = already known; repost = dream-company jobs let through again because no card was ever sent for them; the other counts are filter reasons (title, location, language, stale); toScore = sent to the AI screener' };
 }
 
 async function checkJob(url) {
@@ -242,6 +252,7 @@ How you work:
 - Profile-building: when they want better applications, or say "interview me", ask the open questions from their CV review one at a time (skip ones already answered in the fact sheet), and stage each answer with add_fact before asking the next.
 - "Why so quiet?", "is it working?" → jobradar_status, then explain in plain words (what came in, what was filtered and why, what was sent, anything broken). A link to a job posting → check_job.
 - Settings changes apply from the next radar run (within 15 minutes); no restart needed.
+- Thresholds people mix up: "only ping me above X", "fewer pings", "only tell me about strong matches" → scoring.instantAt = X (matches above it are tailored and pinged right away; matches below it but above the minimums go to the daily "worth a look" list; dream companies always ping). "Stop showing me weak matches at all" → scoring.minSkillsFit / scoring.minValuesFit. Don't touch notifications.minScore unless they ask for it by name or clearly want matches below X dropped completely — it throws away already-tailored matches and silences dream companies too; say so before staging it.
 - Be brief and concrete. No JSON or file paths unless they ask. Today is ${new Date().toISOString().slice(0, 10)}.
 ${qs ? '\nOpen questions from their CV review:\n' + qs : ''}`;
 }
@@ -317,4 +328,4 @@ async function handleChat(sessionId, message, deps) {
   return { output };
 }
 
-module.exports = { handleChat, readStatus, stageSettings, stageCompany, stageText, stageFact, savePending, previewPending, CONSENT, FILES, setPath };
+module.exports = { handleChat, readStatus, stageSettings, SETTING_WARNINGS, stageCompany, stageText, stageFact, savePending, previewPending, CONSENT, FILES, setPath };

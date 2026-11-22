@@ -258,6 +258,44 @@ async function runNode(code, { input = [], nodes = {}, env = {}, state = {} }) {
   });
 }
 
+// 🔁 reposts: a dream-company role you never got a card for comes through again
+{
+  const D = 864e5;
+  const cfgS = { companies: [{ name: 'Acme', url: 'https://jobs.lever.co/acme', dream: true }, { name: 'Beta', url: 'https://jobs.lever.co/beta' }], filters: { titleExclude: ['engineer'] }, scoring: {} };
+  const plan = (slug, company, dream) => ({ source: 'lever', slug, company, dream, _candidate: { files: { 'search_profile.md': 'p', 'resume_base.md': '# Sam\n' }, settings: cfgS, manualUrl: '' } });
+  const lever = (id, title, ageDays) => ({ data: JSON.stringify([{ id, text: title, categories: { allLocations: ['Remote EU'] }, createdAt: now - ageDays * D, hostedUrl: 'https://jobs.lever.co/x/' + id, applyUrl: 'a', workplaceType: 'remote', descriptionPlain: 'Sell software' }]) });
+  const run = (slug, company, dream, job, tracked, state) => runNode(RAD.normalize, { input: [], state,
+    nodes: { '⚙️ Plan run': [plan(slug, company, dream)], '🌐 Fetch job sources': [job], '🗃️ Already sent': tracked } });
+  const old = () => ({ initialized: true, dreamDoneBefore: now - 30 * D, seen: { 'lever:acme:old': now - 5 * D, 'alt:acme|account executive': now - 5 * D }, dreamDone: { 'lever:acme:old': now - 5 * D } });
+
+  let st = old();
+  let out = await run('acme', 'Acme', true, lever('new', 'Account Executive', 10), [], st);
+  t('🔁 dream repost (new ID, same title, old date) is screened again', () => { assert.equal(out.length, 1); assert.equal(st.lastRun.stats.repost, 1); assert.ok(st.dreamDone['lever:acme:new']); });
+  out = await run('acme', 'Acme', true, lever('new', 'Account Executive', 10), [], st);
+  t('🔁 …but only once', () => assert.equal(out.length, 0));
+  st = old();
+  out = await run('acme', 'Acme', true, lever('new', 'Account Executive', 10), [{ uid: 'lever:acme:old', alt_key: 'acme|account executive', folder: '2026-11-01_acme_ae' }], st);
+  t('🔁 no repeat when a card already went out for that role', () => assert.equal(out.length, 0));
+  st = old();
+  out = await run('acme', 'Acme', true, lever('old', 'Account Executive', 10), [], st);
+  t('🔁 same dream job already screened is not re-screened', () => assert.equal(out.length, 0));
+  st = { initialized: true, seen: { 'lever:acme:legacy': now - 5 * D } };
+  out = await run('acme', 'Acme', true, lever('legacy', 'Account Executive', 10), [], st);
+  t('🔁 jobs seen before the update don\'t come back in a burst', () => { assert.equal(out.length, 0); assert.ok(st.dreamDoneBefore); });
+  st = { initialized: true, seen: { 'lever:acme:legacy': now - 5 * D } };
+  out = await run('acme', 'Acme', true, lever('fresh', 'Account Executive', 12), [], st);
+  t('🔁 a new dream job with an old date gets through', () => assert.equal(out.length, 1));
+  st = { initialized: true, seen: { 'alt:beta|account executive': now - 5 * D } };
+  out = await run('beta', 'Beta', false, lever('new', 'Account Executive', 1), [], st);
+  t('🔁 other companies: same title is still a duplicate', () => assert.equal(out.length, 0));
+  st = { initialized: true, seen: {} };
+  out = await run('beta', 'Beta', false, lever('n2', 'Account Executive', 10), [], st);
+  t('🔁 other companies: old dates are still filtered', () => { assert.equal(out.length, 0); assert.equal(st.lastRun.stats['too-old'], 1); });
+  st = { initialized: true, seen: {} };
+  out = await run('acme', 'Acme', true, lever('eng', 'Software Engineer', 1), [], st);
+  t('🔁 dream jobs still respect title filters (and stay filtered)', () => { assert.equal(out.length, 0); assert.ok(st.dreamDone['lever:acme:eng']); });
+}
+
 // 💬 chat: staged edits, saved only after the user's own "yes"
 {
   const os = require('os');
@@ -285,6 +323,21 @@ async function runNode(code, { input = [], nodes = {}, env = {}, state = {} }) {
   const r4 = await C.handleChat('s2', 'no', {});
   t('💬 "no" drops staged changes', () => { assert.ok(/nothing was saved/.test(r4.output)); assert.equal(cfg().scoring.instantAt, 75); });
 
+  const r5 = await C.handleChat('s5', 'set notifications.minScore to 60', { claude: script([tu('change_settings', { changes: [{ path: 'notifications.minScore', value: 60 }], why: 'drop weak matches' }), say('Staged. Save?')]) });
+  t('💬 minScore is staged with a warning about dream companies + instantAt', () => {
+    assert.ok(/notifications.minScore: undefined → 60/.test(r5.output) && /⚠️/.test(r5.output) && /dream companies/.test(r5.output) && /scoring.instantAt/.test(r5.output), r5.output);
+    assert.equal(cfg().notifications, undefined);
+  });
+  await C.handleChat('s5', 'no', {});
+  const r6 = await C.handleChat('s6', 'only ping me above 80', { claude: script([tu('change_settings', { changes: [{ path: 'scoring.instantAt', value: 80 }], why: 'fewer pings' }), say('Staged. Save?')]) });
+  t('💬 instantAt changes carry no warning; minScore at 0 carries none either', () => {
+    assert.ok(!/⚠️/.test(r6.output), r6.output);
+    assert.equal(C.SETTING_WARNINGS['notifications.minScore'](0), null);
+  });
+  await C.handleChat('s6', 'no', {});
+  let sys = '';
+  await C.handleChat('s7', 'hi', { claude: async (b) => { sys = b.system; return say('hi'); } });
+  t('💬 the chat prompt maps "ping me above X" to scoring.instantAt', () => assert.ok(/"only ping me above X"[^\n]*scoring\.instantAt = X/.test(sys) && /notifications\.minScore unless/.test(sys), sys));
   await C.handleChat('s3', 'remember: I ran partner payouts every month', { claude: script([tu('add_fact', { text: 'Ran partner payouts every month' }), say('Got it — save to your fact sheet?')]) });
   await C.handleChat('s3', 'yes please', { claude: script([tu('save_pending', {}), say('Saved to your fact sheet.')]) });
   t('💬 facts go under "Added in chat", rules under "Never claim"', () => {
