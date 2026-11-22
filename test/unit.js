@@ -323,21 +323,9 @@ async function runNode(code, { input = [], nodes = {}, env = {}, state = {} }) {
   const r4 = await C.handleChat('s2', 'no', {});
   t('💬 "no" drops staged changes', () => { assert.ok(/nothing was saved/.test(r4.output)); assert.equal(cfg().scoring.instantAt, 75); });
 
-  const r5 = await C.handleChat('s5', 'set notifications.minScore to 60', { claude: script([tu('change_settings', { changes: [{ path: 'notifications.minScore', value: 60 }], why: 'drop weak matches' }), say('Staged. Save?')]) });
-  t('💬 minScore is staged with a warning about dream companies + instantAt', () => {
-    assert.ok(/notifications.minScore: undefined → 60/.test(r5.output) && /⚠️/.test(r5.output) && /dream companies/.test(r5.output) && /scoring.instantAt/.test(r5.output), r5.output);
-    assert.equal(cfg().notifications, undefined);
-  });
-  await C.handleChat('s5', 'no', {});
-  const r6 = await C.handleChat('s6', 'only ping me above 80', { claude: script([tu('change_settings', { changes: [{ path: 'scoring.instantAt', value: 80 }], why: 'fewer pings' }), say('Staged. Save?')]) });
-  t('💬 instantAt changes carry no warning; minScore at 0 carries none either', () => {
-    assert.ok(!/⚠️/.test(r6.output), r6.output);
-    assert.equal(C.SETTING_WARNINGS['notifications.minScore'](0), null);
-  });
-  await C.handleChat('s6', 'no', {});
   let sys = '';
   await C.handleChat('s7', 'hi', { claude: async (b) => { sys = b.system; return say('hi'); } });
-  t('💬 the chat prompt maps "ping me above X" to scoring.instantAt', () => assert.ok(/"only ping me above X"[^\n]*scoring\.instantAt = X/.test(sys) && /notifications\.minScore unless/.test(sys), sys));
+  t('💬 the chat prompt maps "ping me above X" to scoring.instantAt', () => assert.ok(/"only ping me above X"[^\n]*scoring\.instantAt = X/.test(sys), sys));
   await C.handleChat('s3', 'remember: I ran partner payouts every month', { claude: script([tu('add_fact', { text: 'Ran partner payouts every month' }), say('Got it — save to your fact sheet?')]) });
   await C.handleChat('s3', 'yes please', { claude: script([tu('save_pending', {}), say('Saved to your fact sheet.')]) });
   t('💬 facts go under "Added in chat", rules under "Never claim"', () => {

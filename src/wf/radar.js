@@ -315,7 +315,6 @@ const digest = n.delivery === 'digest';
 const out = [];
 for (const c of jobs) {
   if (digest) continue;
-  if ((n.minScore || 0) > 0 && c.fit.score !== null && c.fit.score < n.minScore) continue;
   const bins = byJob[c.jrId] || {};
   if (channels.includes('telegram')) {
     const card = telegramCard(c, n);

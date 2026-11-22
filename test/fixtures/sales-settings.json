@@ -136,7 +136,6 @@
       "docx"
     ],
     "_files": "any of docx, pdf",
-    "minScore": 0,
     "quietHours": {
       "from": "22:30",
       "to": "07:30"

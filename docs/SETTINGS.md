@@ -24,7 +24,6 @@ Changes apply on the next run (every 15 minutes, or `./jobradar run`). Secrets a
 | `notifications.delivery` | `instant` | `instant`, or `digest` (everything in one summary at `digestTime`; files stay in `output/`). The "worth a look" list is sent at `digestTime` either way. |
 | `notifications.style` | `compact` | `compact` = role, score, why, what to check. `detailed` adds gaps, ATS keywords, what changed. |
 | `notifications.files` | `["docx"]` | Any of `docx`, `pdf`. |
-| `notifications.minScore` | `0` | Hard floor: matches below it are tailored but never sent — dream companies included. Leave at 0; to get fewer pings, raise `scoring.instantAt`. |
 | `notifications.quietHours` | `22:30–07:30` | Telegram arrives silently in this window (your `TIMEZONE`). |
 | `notifications.buttons` | all on | `linkedinSearch`, `copyOutreachNote`, `statusButtons`. |
 | `reports` | Monday 08:30 + monthly | `weekly`, `weeklyDay`, `time`, `monthly`, `checkInAfterDays` (ask about outcomes after N days), `ghostedAfterDays`. |

@@ -92,7 +92,7 @@ Everything about *what* to find and *how* to notify lives in one file. Highlight
 - `notifications.files` — `["docx"]`, `["pdf"]` or both.
 - `notifications.delivery` — `instant` (default) or `digest` (one summary a day).
 - `notifications.quietHours` — Telegram arrives silently at night.
-- `notifications.buttons` — which buttons you want on each card (to get fewer pings, raise `scoring.instantAt`; leave `notifications.minScore` at 0).
+- `notifications.buttons` — which buttons you want on each card. To get fewer pings, raise `scoring.instantAt`.
 - `filters` — job titles to keep or drop, languages you don't speak.
 - `reports` — weekly day/time, monthly roll-up.
 - `replyDetection.enabled` — email users: JobRadar reads only new mail that mentions a company you applied to, and Claude labels it reply / rejection / interview.
