@@ -10,6 +10,7 @@ const now = Date.now();
 // Code-node harness: runs a //@node block from src/wf with fake n8n globals
 function nodeBlocks(file) { const o = {}; for (const c of fs.readFileSync(path.join(ROOT, 'src/wf', file), 'utf8').split(/^\/\/@node\s+/m).slice(1)) o[c.split('\n')[0].trim()] = c.split('\n').slice(1).join('\n'); return o; }
 const OTH = nodeBlocks('others.js');
+const RAD = nodeBlocks('radar.js');
 async function runNode(code, { input = [], nodes = {}, env = {}, state = {} }) {
   const fn = new Function('$input', '$', '$env', '$getWorkflowStaticData', `return (async function(){\n${code}\n${libSrc}\n}).call(this)`);
   const $ = (name) => { if (!(name in nodes)) throw new Error('node not executed: ' + name); const items = nodes[name].map((j) => ({ json: j })); return { all: () => items, first: () => items[0] }; };
@@ -192,6 +193,26 @@ async function runNode(code, { input = [], nodes = {}, env = {}, state = {} }) {
   t('countryLock flags UK right to work', () => assert.equal((L.countryLock('Candidates must have the right to work in the UK.', alexProfile) || {}).country, 'UK'));
   t('countryLock ignores truly global roles', () => assert.equal(L.countryLock('Fully remote; we hire anywhere through an employer of record. Pay in EUR.', alexProfile), null));
   t('countryLock stays quiet for candidates who live there', () => assert.equal(L.countryLock('Zone 3: All other US locations', usProfile), null));
+}
+
+// 🩺 source health: dead sources must not pass as healthy
+{
+  const cand = { files: {}, settings: {}, invalidCompanies: [] };
+  const hcReq = { source: 'hiringcafe_mcp', slug: 'account executive', method: 'POST', url: 'x', _candidate: cand };
+  const sse403 = 'event: message\ndata: {"result":{"content":[{"type":"text","text":"HiringCafe responded with HTTP 403 for https://hiring.cafe/jobs/x"}],"isError":true},"jsonrpc":"2.0","id":1}\n\n';
+  const out = await runNode(RAD.source_health, { input: [{ data: sse403 }], nodes: { '⚙️ Plan run': [hcReq] }, state: {} });
+  t('🩺 MCP isError inside a 200 reply → alert', () => { assert.ok(out.length === 2 && /HTTP 403/.test(out[0].json.tg.text), JSON.stringify(out).slice(0, 200)); });
+
+  const wwr = { source: 'weworkremotely', method: 'GET', url: 'x', _candidate: cand };
+  const empty = '<rss><channel></channel></rss>';
+  const fresh = await runNode(RAD.source_health, { input: [{ data: empty }], nodes: { '⚙️ Plan run': [wwr] }, state: {} });
+  t('🩺 board with no jobs: quiet on the first day', () => assert.equal(fresh.length, 0));
+  const old = { yield: { 'weworkremotely:': { since: Date.now() - 2 * 864e5, last: null } } };
+  const stale = await runNode(RAD.source_health, { input: [{ data: empty }], nodes: { '⚙️ Plan run': [wwr] }, state: old });
+  t('🩺 board with no usable jobs for 24h+ → alert', () => assert.ok(stale.length === 2 && /no usable jobs/.test(stale[0].json.tg.text)));
+  const company = { source: 'ashby', company: 'Quiet Co', slug: 'quiet', method: 'GET', url: 'x', _candidate: cand };
+  const none = await runNode(RAD.source_health, { input: [{ data: { jobs: [] } }], nodes: { '⚙️ Plan run': [company] }, state: { yield: {} } });
+  t('🩺 company page with no openings is fine', () => assert.equal(none.length, 0));
 }
 console.log(`\nunit OK (${n} checks)`);
 })().catch((e) => { console.error(e); process.exit(1); });

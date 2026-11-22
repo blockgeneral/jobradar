@@ -43,6 +43,17 @@ for (let i = 0; i < resp.length; i++) {
     if (d === null || d === '') problem = 'empty response';
     else if (req.slug && req.source !== 'himalayas' && req.source !== 'personio' && typeof d === 'object' && !Array.isArray(d) && !d.jobs && !d.offers && !d.content && !d.result && !d.data) problem = 'unexpected response — wrong company link?';
     else if (d && d.error && req.source === 'hiringcafe_mcp') problem = 'Hiring Cafe MCP error: ' + JSON.stringify(d.error).slice(0, 100);
+    else if (d && d.result && d.result.isError) { // MCP tools report failures inside a normal 200 reply
+      const msg = [].concat(d.result.content || []).map((c) => c && c.text).filter(Boolean).join(' ');
+      problem = 'returned an error: ' + (msg || 'no details').slice(0, 120);
+    } else if (!req.company) {
+      // job boards (not company pages, which can legitimately have no openings): zero usable jobs for a day = broken
+      let count = 0; try { count = normalize(req, r.data).length; } catch (e) {}
+      state.yield = state.yield || {};
+      const y = state.yield[req.source + ':' + (req.slug || '')] = state.yield[req.source + ':' + (req.slug || '')] || { since: now, last: null };
+      if (count > 0) y.last = now;
+      else if (now - (y.last || y.since) > 864e5) problem = 'no usable jobs for over 24 hours — the source may have changed or be blocking us';
+    }
   }
   const key = req.source + ':' + (req.slug || '');
   if (problem) {
@@ -51,7 +62,7 @@ for (let i = 0; i < resp.length; i++) {
 }
 if (!bad.length) return [];
 const lines = bad.map((b) => `• ${b.name}${b.src ? ' (' + b.src + ')' : ''}: ${b.problem}`);
-const text = `JobRadar source check — these didn't work this run. Fix or remove them in settings.json:\n\n${lines.join('\n')}`;
+const text = `JobRadar source check — these sources aren't delivering jobs. Fix or switch them off in settings.json:\n\n${lines.join('\n')}`;
 return [
   { json: { kind: 'tg_text', tg: { text: '🩺 ' + text, disable_web_page_preview: true } } },
   { json: { kind: 'email', subject: 'JobRadar: some sources need attention', text, html: `<pre style="font-family:inherit;white-space:pre-wrap">${escHtml(text)}</pre>` } },
