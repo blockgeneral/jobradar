@@ -13,9 +13,11 @@ for (const f of ['settings.json', 'resume_base.md', 'cover_letter_base.md', 'sea
 let settings;
 try { settings = JSON.parse(files['settings.json']); } catch (e) { throw new Error('settings.json is not valid JSON: ' + e.message); }
 const env = { APIFY_TOKEN: envGet('APIFY_TOKEN'), MOCK: envGet('JOBRADAR_MOCK_BASE') };
-const reqs = buildRequests(settings, env, Date.now(), env.MOCK || '');
+let manualUrl = '';
+try { const b = $('🔗 Run from CLI').first().json.body || {}; manualUrl = typeof b.url === 'string' ? b.url.trim() : ''; } catch (e) { /* not started from the webhook */ }
+const reqs = manualUrl ? manualRequests(manualUrl, env.MOCK || '') : buildRequests(settings, env, Date.now(), env.MOCK || '');
 const { invalid } = companiesFromSettings(settings);
-const candidate = { files, settings, invalidCompanies: invalid };
+const candidate = { files, settings, invalidCompanies: invalid, manualUrl };
 if (!reqs.length) return [{ json: { url: 'about:blank', source: 'none', _candidate: candidate } }];
 return reqs.map((r, i) => ({ json: i === 0 ? Object.assign({}, r, { _candidate: candidate }) : r }));
 
@@ -34,7 +36,7 @@ for (const u of invalid) {
 }
 for (let i = 0; i < resp.length; i++) {
   const req = plan[i] && plan[i].json;
-  if (!req || req.source === 'none') continue;
+  if (!req || req.source === 'none' || req.manualUrl) continue; // a pasted link isn't a source to monitor
   const r = resp[i].json;
   let problem = null;
   if (r.error) problem = (r.error.message || JSON.stringify(r.error)).slice(0, 140);
@@ -60,6 +62,7 @@ for (let i = 0; i < resp.length; i++) {
     if (!state.health[key] || now - state.health[key] > 864e5) { bad.push({ name: req.company || req.source, problem, src: req.source }); state.health[key] = now; }
   } else if (state.health[key]) delete state.health[key];
 }
+await postStatus(this.helpers, 'health', { run: $execution.id, problems: bad.map((b) => ({ name: b.name + (b.src ? ' (' + b.src + ')' : ''), problem: b.problem })) });
 if (!bad.length) return [];
 const lines = bad.map((b) => `• ${b.name}${b.src ? ' (' + b.src + ')' : ''}: ${b.problem}`);
 const text = `JobRadar source check — these sources aren't delivering jobs. Fix or switch them off in settings.json:\n\n${lines.join('\n')}`;
@@ -93,6 +96,12 @@ for (let i = 0; i < fetched.length; i++) {
   if (!req || r.error || req.source === 'none') continue;
   try { jobs = jobs.concat(normalize(req, r.data)); } catch (e) { /* malformed payload — reported by 🩺 */ }
 }
+const manualUrl = plan[0].json._candidate.manualUrl;
+if (manualUrl) {
+  const one = jobs.length === 1 && jobs[0].source === 'manual' ? jobs[0] : pickManual(jobs, manualUrl);
+  jobs = one ? [Object.assign(one, { manual: true })] : [];
+  if (!one) await postStatus(this.helpers, 'gate', { run: $execution.id, manualUrl, manual: { found: false, note: "couldn't find that posting on its job board or read the page — it may be closed, or the page needs a login" } });
+}
 for (const j of jobs) { const w = watched[normName(j.company)]; if (w) { j.watched = true; if (w.dream) j.dream = true; } }
 const stats = { fetched: jobs.length };
 const passed = [];
@@ -101,6 +110,7 @@ const mark = (j) => { state.seen[j.uid] = now; state.seen['alt:' + j.altKey] = n
 for (const j of jobs) {
   if (batch.has(j.uid) || batch.has('alt:' + j.altKey)) { stats.duplicate = (stats.duplicate || 0) + 1; continue; }
   batch.add(j.uid); batch.add('alt:' + j.altKey);
+  if (j.manual) { passed.push(j); continue; } // you asked for this one: no dedupe, no filters
   if (known.has(j.uid) || known.has('alt:' + j.altKey) || state.seen[j.uid] || state.seen['alt:' + j.altKey]) { stats.seen = (stats.seen || 0) + 1; continue; }
   const age = hoursSince(j.postedAt, now);
   // never flood: on the very first run only recent jobs (or undated ones at dream companies) go through
@@ -117,6 +127,7 @@ stats.toScore = toScore.length; stats.deferred = passed.length - toScore.length;
 for (const k of Object.keys(state.seen)) if (now - state.seen[k] > 90 * 864e5) delete state.seen[k];
 state.initialized = true;
 state.lastRun = { at: new Date(now).toISOString(), stats, firstInstall };
+if (!manualUrl) await postStatus(this.helpers, 'normalize', { run: $execution.id, stats });
 
 const model = envGet('SCORING_MODEL') || 'claude-haiku-5-5';
 return toScore.map((j) => ({ json: { job: j, preview: firstInstall, scoreRequest: scoreRequest(j, files['search_profile.md'], files['resume_base.md'], model) } }));
@@ -134,6 +145,7 @@ const state = $getWorkflowStaticData('global');
 const model = envGet('TAILORING_MODEL') || 'claude-sonnet-5-5';
 const instant = [], digest = [];
 let preview = false;
+let manualResult = null;
 for (let i = 0; i < resp.length; i++) {
   const p = prev[i] && prev[i].json;
   if (!p || !p.job) continue;
@@ -160,10 +172,24 @@ for (let i = 0; i < resp.length; i++) {
     lockWarn.push(`Location: posting reads ${lock.country}-only (${lock.evidence}), though the board says "${job.location || 'remote'}". Check before applying.`);
   }
   const hardNo = fit.location_eligible === 'no' || fit.english_only === 'no' || fit.comp_meets_floor === 'no';
-  if (hardNo || skills < (job.dream ? minS - 10 : minS) || values < minV) continue;
+  const low = skills < (job.dream ? minS - 10 : minS) || values < minV;
+  if (job.manual) {
+    const why = [];
+    if (fit.location_eligible === 'no') why.push('location: ' + (fit.location_reason || 'not hireable from where you are'));
+    if (fit.english_only === 'no') why.push('needs a language other than English');
+    if (fit.comp_meets_floor === 'no') why.push('pay is below your floor');
+    if (low) why.push(`fit below your minimum (skills ${skills}, values ${values})`);
+    manualResult = { found: true, company: job.company, title: job.title, score: fit.score, skills_fit: fit.skills_fit, values_fit: fit.values_fit, why: fit.why, gaps: fit.gaps, would_normally_skip: why };
+    instant.push({ job, fit, warnings: lockWarn.concat(why.length ? ['You asked for this one — normally skipped: ' + why.join('; ')] : []) });
+    continue;
+  }
+  if (hardNo || low) continue;
   (job.dream || fit.score >= instantAt ? instant : digest).push({ job, fit, warnings: lockWarn });
 }
 instant.sort((a, b) => (b.job.dream - a.job.dream) || ((b.fit.score || 0) - (a.fit.score || 0)));
+const brief = (m) => ({ company: m.job.company, title: m.job.title, score: m.fit.score, url: m.job.applyUrl || m.job.url });
+await postStatus(this.helpers, 'gate', { run: $execution.id, screened: resp.length, instant: instant.map(brief), digest: digest.map(brief),
+  manualUrl: $('⚙️ Plan run').first().json._candidate.manualUrl || undefined, manual: manualResult || undefined });
 const cap = preview ? ((settings.preview && settings.preview.count) || 3) : (sc.maxTailoredPerRun || 4);
 for (const m of instant.slice(cap)) { delete state.seen[m.job.uid]; delete state.seen['alt:' + m.job.altKey]; } // over the cap: picked up next run
 return instant.slice(0, cap).map((m) => ({ json: Object.assign(m, { tier: 'instant', preview,

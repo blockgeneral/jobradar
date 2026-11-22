@@ -13,7 +13,9 @@ node -e 'const s=require(process.argv[1]);s.hiringCafe.enabled=true;s.hiringCafe
 
 node "$ROOT/test/mock-server.js" 5689 "$T/mock" > "$T/mock.log" 2>&1 & P1=$!
 node "$ROOT/test/smtp-sink.js" 2526 "$T/mock/smtp.jsonl" > "$T/smtp.log" 2>&1 & P2=$!
-PORT=3101 OUTPUT_DIR="$T/out" GOTENBERG_URL=http://127.0.0.1:5689 node "$ROOT/renderer/server.js" > "$T/renderer.log" 2>&1 & P3=$!
+ln -s "$ROOT/src" "$T/work/src"
+PORT=3101 OUTPUT_DIR="$T/out" GOTENBERG_URL=http://127.0.0.1:5689 JOBRADAR_PROJECT="$T/work" N8N_URL=http://127.0.0.1:5690 \
+  ANTHROPIC_API_KEY=test-key ANTHROPIC_BASE_URL=http://127.0.0.1:5689 node "$ROOT/renderer/server.js" > "$T/renderer.log" 2>&1 & P3=$!
 trap 'kill $P1 $P2 $P3 2>/dev/null || true' EXIT
 sleep 1.5
 
@@ -28,7 +30,7 @@ run() { "$N8N" "$@" 2>&1 | grep -v -i "python task runner" || true; }
 node "$ROOT/tools/credentials.js" > "$T/creds.json"
 run import:credentials --input="$T/creds.json" | tail -1
 for f in "$ROOT"/workflows/*.json; do run import:workflow --input="$f" | tail -1; done
-for id in JobRadarSend0001 JobRadarMain0001 JobRadarActn0001 JobRadarRprt0001; do run publish:workflow --id=$id | tail -1; done
+for id in JobRadarSend0001 JobRadarMain0001 JobRadarActn0001 JobRadarRprt0001 JobRadarChat0001; do run publish:workflow --id=$id | tail -1; done
 N8N_PORT=5690 N8N_LISTEN_ADDRESS=127.0.0.1 N8N_RUNNERS_BROKER_PORT=5691 "$N8N" start > "$T/n8n.log" 2>&1 & P4=$!
 trap 'kill $P1 $P2 $P3 $P4 2>/dev/null || true' EXIT
 for i in $(seq 1 180); do c=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:5690/webhook/jobradar-report?type=none" || true); { [ "$c" = "200" ] || [ "$c" = "500" ]; } && break; sleep 1; done
@@ -61,3 +63,12 @@ fetch("http://127.0.0.1:5689/_ctl/updates",{method:"POST",body:JSON.stringify([{
 echo "── buttons (watch)"; hook jobradar-buttons b2
 sleep 2
 node "$ROOT/test/e2e-assert.js" "$T"
+
+echo "── chat: a pasted job link (normally filtered out: German-speaking)"
+curl -s -m 600 -X POST -H 'content-type: application/json' -d '{"url":"https://jobs.ashbyhq.com/n8n/de"}' "http://127.0.0.1:5690/webhook/jobradar-run" -o /dev/null -w "  webhook jobradar-run {url} → HTTP %{http_code}\n"
+sleep 2
+echo "── chat: talk to the helper"
+chat() { curl -s -m 120 -X POST -H 'content-type: application/json' -d "{\"sessionId\":\"e2e\",\"message\":\"$1\"}" http://127.0.0.1:3101/chat -o "$T/$2"; }
+chat "watch Cool Co as a dream company" chat1.json; chat "yes" chat2.json
+curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:5690/webhook/b7c1a5e0-0c4a-4e1d-9a6b-6a6f62726164/chat" > "$T/chatpage.code" || true
+node "$ROOT/test/e2e-chat-assert.js" "$T"

@@ -3,7 +3,7 @@
 const fs = require('fs'); const path = require('path'); const assert = require('assert');
 const ROOT = path.join(__dirname, '..');
 const libSrc = ['util', 'sources', 'prompts', 'guard', 'notify'].map((n) => fs.readFileSync(path.join(ROOT, 'src/lib', n + '.js'), 'utf8')).join('\n');
-const L = new Function('$env', libSrc + '; return { normalize, watchList, normName, preFilter, checkTailoring, keywordCoverage, toIso, detectAts, companiesFromSettings, buildRequests, parseBody, telegramCard, emailForJob, computeReport, telegramReport, inQuietHours, shortHash, fillCoverLetter, countryLock, claimCheck, contactLinks, resumeDiff, changesDoc };')({ NOTIFY_CHANNELS: 'telegram,email' });
+const L = new Function('$env', libSrc + '; return { normalize, watchList, normName, preFilter, checkTailoring, keywordCoverage, toIso, detectAts, companiesFromSettings, buildRequests, parseBody, telegramCard, emailForJob, computeReport, telegramReport, inQuietHours, shortHash, fillCoverLetter, countryLock, claimCheck, contactLinks, resumeDiff, changesDoc, manualRequests, pickManual };')({ NOTIFY_CHANNELS: 'telegram,email' });
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('  ✔ ' + name); };
 const now = Date.now();
 
@@ -12,9 +12,9 @@ function nodeBlocks(file) { const o = {}; for (const c of fs.readFileSync(path.j
 const OTH = nodeBlocks('others.js');
 const RAD = nodeBlocks('radar.js');
 async function runNode(code, { input = [], nodes = {}, env = {}, state = {} }) {
-  const fn = new Function('$input', '$', '$env', '$getWorkflowStaticData', `return (async function(){\n${code}\n${libSrc}\n}).call(this)`);
+  const fn = new Function('$input', '$', '$env', '$getWorkflowStaticData', '$execution', `return (async function(){\n${code}\n${libSrc}\n}).call(this)`);
   const $ = (name) => { if (!(name in nodes)) throw new Error('node not executed: ' + name); const items = nodes[name].map((j) => ({ json: j })); return { all: () => items, first: () => items[0] }; };
-  return fn.call({ helpers: {} }, { all: () => input.map((j) => ({ json: j })), first: () => ({ json: input[0] }) }, $, env, () => state);
+  return fn.call({ helpers: {} }, { all: () => input.map((j) => ({ json: j })), first: () => ({ json: input[0] }) }, $, env, () => state, { id: 'test' });
 }
 
 (async () => {
@@ -255,6 +255,72 @@ async function runNode(code, { input = [], nodes = {}, env = {}, state = {} }) {
     assert.match(d.summary, /summary\/headline rewritten · 1 line reworded · 1 moved/);
     const doc = L.changesDoc(d, 'Acme', { HIRING_TEAM: 'Acme Team', WHY_COMPANY: 'I use Acme daily.', LOCATION_LINE: 'Remote works.' });
     assert.ok(/\*\*Before:\*\* Cut p99 latency by 40%/.test(doc) && /\*\*After:\*\* Cut p99 checkout latency/.test(doc) && /I use Acme daily/.test(doc), doc);
+  });
+}
+
+// 💬 chat: staged edits, saved only after the user's own "yes"
+{
+  const os = require('os');
+  const P = fs.mkdtempSync(path.join(os.tmpdir(), 'jr-chat-'));
+  fs.cpSync(path.join(ROOT, 'src'), path.join(P, 'src'), { recursive: true });
+  fs.mkdirSync(path.join(P, 'candidate'));
+  fs.writeFileSync(path.join(P, 'settings.json'), JSON.stringify({ companies: [{ name: 'n8n', dream: true }], scoring: { instantAt: 75 } }, null, 2));
+  fs.writeFileSync(path.join(P, 'candidate/experience_inventory.md'), '<!-- EXPERIENCE INVENTORY -->\n# Acme\n- Sold things\n\n# Never claim\n- PostgreSQL\n');
+  fs.writeFileSync(path.join(P, 'candidate/resume_base.md'), '# Sam Rivera\nAE\n');
+  process.env.JOBRADAR_PROJECT = P; process.env.OUTPUT_DIR = path.join(P, 'output');
+  delete require.cache[require.resolve(path.join(ROOT, 'renderer/chat.js'))];
+  const C = require(path.join(ROOT, 'renderer/chat.js'));
+  const script = (steps) => { let i = 0; return async () => steps[Math.min(i++, steps.length - 1)]; };
+  const tu = (name, input) => ({ stop_reason: 'tool_use', content: [{ type: 'text', text: '' }, { type: 'tool_use', id: 'tu' + Math.random(), name, input }] });
+  const say = (text) => ({ stop_reason: 'end_turn', content: [{ type: 'text', text }] });
+  const cfg = () => JSON.parse(fs.readFileSync(path.join(P, 'settings.json'), 'utf8'));
+
+  const r1 = await C.handleChat('s1', 'watch Supabase as a dream company', { claude: script([tu('watch_company', { name: 'Supabase', dream: true }), say('Staged Supabase as a dream company. Save?')]) });
+  t('💬 a change is staged and shown, not saved', () => { assert.ok(/Ready to save/.test(r1.output) && /watch Supabase ⭐/.test(r1.output), r1.output); assert.equal(cfg().companies.length, 1); });
+  const r2 = await C.handleChat('s1', 'yes', {});
+  t('💬 "yes" saves it (with a backup)', () => { assert.ok(/Saved: settings.json/.test(r2.output)); assert.ok(cfg().companies.some((c) => c.name === 'Supabase' && c.dream)); assert.ok(fs.existsSync(path.join(P, 'settings.json.bak'))); });
+
+  const r3 = await C.handleChat('s2', 'only ping me above 70', { claude: script([tu('change_settings', { changes: [{ path: 'scoring.instantAt', value: 70 }], why: 'higher bar' }), tu('save_pending', {}), say('Saved!')]) });
+  t('💬 the AI cannot save without the user\'s yes', () => { assert.equal(cfg().scoring.instantAt, 75); assert.ok(/Ready to save/.test(r3.output) && /scoring.instantAt: 75 → 70/.test(r3.output), r3.output); });
+  const r4 = await C.handleChat('s2', 'no', {});
+  t('💬 "no" drops staged changes', () => { assert.ok(/nothing was saved/.test(r4.output)); assert.equal(cfg().scoring.instantAt, 75); });
+
+  await C.handleChat('s3', 'remember: I ran partner payouts every month', { claude: script([tu('add_fact', { text: 'Ran partner payouts every month' }), say('Got it — save to your fact sheet?')]) });
+  await C.handleChat('s3', 'yes please', { claude: script([tu('save_pending', {}), say('Saved to your fact sheet.')]) });
+  t('💬 facts go under "Added in chat", rules under "Never claim"', () => {
+    const inv = fs.readFileSync(path.join(P, 'candidate/experience_inventory.md'), 'utf8');
+    assert.ok(/# Added in chat\n- Ran partner payouts every month/.test(inv) && /# Never claim\n- PostgreSQL/.test(inv), inv);
+  });
+
+  const bad = await C.handleChat('s4', 'set nonsense', { claude: script([tu('change_settings', { changes: [{ path: '__proto__.x', value: 1 }], why: 'x' }), say('That did not work.')]) });
+  t('💬 dangerous settings paths are refused', () => assert.ok(!/Ready to save/.test(bad.output)));
+
+  fs.mkdirSync(path.join(P, 'output/.jobradar'), { recursive: true });
+  const now = new Date().toISOString();
+  fs.writeFileSync(path.join(P, 'output/.jobradar/status.jsonl'), [
+    { at: now, run: 1, part: 'normalize', stats: { fetched: 120, seen: 100, title: 15, toScore: 5 } },
+    { at: now, run: 1, part: 'health', problems: [{ name: 'Hiring Cafe (hiringcafe_mcp)', problem: 'returned an error: HTTP 403' }] },
+    { at: now, run: 1, part: 'gate', screened: 5, instant: [{ company: 'n8n', title: 'AE', score: 81 }], digest: [] },
+  ].map((x) => JSON.stringify(x)).join('\n') + '\n');
+  t('💬 status sums the recent runs', () => { const st = C.readStatus(24); assert.equal(st.totals.fetched, 120); assert.equal(st.totals.sent_now, 1); assert.ok(st.broken_sources['Hiring Cafe (hiringcafe_mcp)']); });
+}
+
+// 🔗 a pasted job link
+{
+  t('🔗 known job board link → that board\'s feed', () => {
+    const r = L.manualRequests('https://jobs.ashbyhq.com/n8n/0f3c2b1a-aaaa-bbbb-cccc-1234567890ab', '')[0];
+    assert.equal(r.source, 'ashby'); assert.equal(r.slug, 'n8n'); assert.ok(/api\.ashbyhq\.com/.test(r.url)); assert.ok(r.manualUrl);
+  });
+  t('🔗 unknown site → read the page', () => assert.equal(L.manualRequests('https://careers.example.com/jobs/123', '')[0].source, 'manual'));
+  t('🔗 picks the one posting from the whole board', () => {
+    const jobs = [{ uid: 'ashby:n8n:1111', url: 'https://jobs.ashbyhq.com/n8n/aaaa-1111' }, { uid: 'ashby:n8n:2222', url: 'https://jobs.ashbyhq.com/n8n/bbbb-2222' }];
+    assert.equal(L.pickManual(jobs, 'https://jobs.ashbyhq.com/n8n/bbbb-2222/application?utm=x').uid, 'ashby:n8n:2222');
+    assert.equal(L.pickManual(jobs, 'https://jobs.ashbyhq.com/n8n/cccc-3333'), null);
+  });
+  t('🔗 a plain job page becomes a job', () => {
+    const html = '<html><head><title>Account Executive – Acme</title><meta property="og:site_name" content="Acme"></head><body><nav>menu</nav><h1>Account Executive</h1><p>Sell Acme to mid-market teams. Remote EU.</p><script>x()</script></body></html>';
+    const j = L.normalize({ source: 'manual', url: 'https://acme.example/jobs/1', manualUrl: 'https://acme.example/jobs/1' }, html)[0];
+    assert.equal(j.company, 'Acme'); assert.ok(/Account Executive/.test(j.title)); assert.ok(/mid-market/.test(j.description) && !/menu|x\(\)/.test(j.description));
   });
 }
 console.log(`\nunit OK (${n} checks)`);

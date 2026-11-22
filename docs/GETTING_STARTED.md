@@ -75,7 +75,7 @@ Linux/WSL: if `git` is missing, `sudo apt install -y git`.
 | Where you can work | e.g. `Vienna; remote EU/EMEA or via EOR; hybrid Vienna` |
 | Minimum pay | e.g. `120k USD OTE` — or Enter to skip |
 | What matters in a company | e.g. `remote-first, product I believe in, well-run, learning from great people` |
-| 4 · Companies | One per line: a careers-page link **or** just a company name. `*` = dream company. Empty line to finish |
+| 4 · Companies | One per line: a careers-page link **or** just a company name. `*` = dream company. Empty line to finish — or skip and add them later in the chat |
 
 You'll see your **CV review**, then setup builds and starts everything (a few minutes the first time) and runs a first search.
 
@@ -84,13 +84,15 @@ You'll see your **CV review**, then setup builds and starts everything (a few mi
 - Within minutes: **up to 3 job cards** from the last 7 days, each with your tailored resume and cover letter (Word).
 - Your profile is in `candidate/`, each job's files in `output/`.
 
-## 8. Make it yours
-- Fill in any `TODO` lines in `candidate/search_profile.md`.
-- Do the **30-minute interview** ([onboarding/README.md](../onboarding/README.md)) — it starts from your CV review and makes tailoring much better.
-- Adjust `settings.json` any time ([reference](SETTINGS.md)). Changes apply on the next run.
+## 8. Make it yours — in the chat
+- Run `./jobradar chat`. The first time, n8n asks you to create a local login (only on your computer) — then the chat opens.
+- Say **"interview me"**: it asks the open questions from your CV review one at a time and saves your answers to your fact sheet, which makes tailoring much better.
+- Change anything the same way: companies, filters, pay, quiet hours, "why so quiet?", or paste a job link to check it now. Every change is shown first and saved only when you say yes.
+- Prefer files? Everything also lives in `candidate/` and `settings.json` ([reference](SETTINGS.md)). The voice interview for Claude app users: [onboarding/README.md](../onboarding/README.md).
 
 ## Everyday commands
 ```bash
+./jobradar chat         # change anything in plain words
 ./jobradar run          # check job boards now
 ./jobradar companies    # add companies
 ./jobradar import-cv    # import a new CV version

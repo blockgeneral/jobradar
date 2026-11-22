@@ -10,7 +10,7 @@ const { render, save, safe } = require('./server');
   const dir = path.join(OUT, folder);
   if (!process.argv[2] || !fs.existsSync(dir)) {
     console.error('usage: ./jobradar rerender <job-folder>\nRecent jobs:');
-    if (fs.existsSync(OUT)) fs.readdirSync(OUT).sort().slice(-10).forEach((d) => console.error('  ' + d));
+    if (fs.existsSync(OUT)) fs.readdirSync(OUT).filter((d) => !d.startsWith('.')).sort().slice(-10).forEach((d) => console.error('  ' + d));
     process.exit(1);
   }
   const meta = JSON.parse(fs.readFileSync(path.join(dir, 'job.json'), 'utf8'));

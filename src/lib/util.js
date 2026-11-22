@@ -138,3 +138,12 @@ function countryLock(text, profileMd) {
   }
   return null;
 }
+
+// Tell the helper service what this run did, so the chat can answer "why so quiet?". Never fails the run.
+async function postStatus(helpers, part, data) {
+  try {
+    if (!helpers || !helpers.httpRequest) return;
+    const base = envGet('RENDERER_URL') || 'http://renderer:3100';
+    await helpers.httpRequest({ method: 'POST', url: base + '/status', json: true, body: Object.assign({ part }, data), timeout: 5000 });
+  } catch (e) { /* status is best-effort */ }
+}

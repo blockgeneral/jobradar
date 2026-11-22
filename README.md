@@ -69,7 +69,20 @@ The CV import gets you started; the interview makes it yours. JobRadar can only 
 
 JobRadar sends to your plus-address (`you+jobradar@gmail.com`). The setup writes a `gmail-filter.xml`; import it once (Gmail → Settings → Filters → Import) and every JobRadar email skips your inbox and lands under a **JobRadar** label. Turn on notifications for that label in the Gmail app so matches still reach your phone.
 
-## Make it yours: `settings.json`
+## Change anything by chatting: `./jobradar chat`
+
+After setup you never need the terminal or a text editor. Open the chat page (`./jobradar chat`, or bookmark the link it prints; sign in with your local n8n login) and say what you want, in your own words:
+
+- "watch Supabase as a dream company" · "stop watching Deel"
+- "only ping me for scores above 70" · "quiet hours from 23:00" · "turn off Remotive"
+- "I won't take roles that need 5 years of enterprise sales" · "I'm fine with hybrid in Vienna"
+- "remember: I ran partner payouts every month" · "never say 'a few partners'" · "interview me"
+- "why was it quiet today?" — real numbers from the last runs, and any broken source
+- paste a job link — screened right away, tailored, and sent as a normal card (even if your filters would skip it, with the reason)
+
+It shows every change before → after and saves only when you say **yes** (a backup of the old file is kept). It runs on your own Claude key (a cent or two per message), only you can open it, and it never applies or messages anyone for you. Prefer voice? The deeper [interview](onboarding/README.md) runs in the Claude app.
+
+## Make it yours by hand: `settings.json`
 
 Everything about *what* to find and *how* to notify lives in one file. Highlights (full reference: [docs/SETTINGS.md](docs/SETTINGS.md)):
 
@@ -110,6 +123,7 @@ Changes apply on the next run. Keys and channels live in `.env` (`./jobradar set
 
 ```
 ./jobradar setup        first-time setup (safe to re-run to change anything)
+./jobradar chat         change anything in plain words (opens the chat page)
 ./jobradar run          check the job boards right now
 ./jobradar companies    add companies (paste career-page links)
 ./jobradar import-cv    import a CV (PDF) → honest review + your candidate files
@@ -120,7 +134,7 @@ Changes apply on the next run. Keys and channels live in `.env` (`./jobradar set
 ./jobradar start | stop | restart | logs
 ```
 
-Inside n8n (http://localhost:5678) you'll find six workflows and two tables: **jobradar_jobs** (your application tracker) and **jobradar_watch** (companies you added with ➕), both viewable and editable there.
+Inside n8n (http://localhost:5678) you'll find seven workflows (one is the chat) and two tables: **jobradar_jobs** (your application tracker) and **jobradar_watch** (companies you added with ➕), both viewable and editable there.
 
 ## Running 24/7
 

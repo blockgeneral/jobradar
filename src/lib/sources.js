@@ -105,6 +105,27 @@ function buildRequests(settings, env, now, mockBase) {
   return reqs;
 }
 
+// A single job link pasted in the chat: use the company's job-board feed when we know the board (the page itself
+// is often built by JavaScript), otherwise read the page.
+function manualRequests(url, mockBase) {
+  const det = detectAts(url);
+  const r = det && atsUrls()[det.ats]
+    ? { source: det.ats, company: '', slug: det.slug, dream: false, url: atsUrls()[det.ats](det.slug), method: 'GET', manualUrl: url }
+    : { source: 'manual', slug: url, url, method: 'GET', manualUrl: url };
+  if (mockBase) r.url = mockBase + '/src/' + r.source + '/' + encodeURIComponent(r.slug || r.source);
+  return [r];
+}
+
+// From a whole board, keep the one posting the link points at (matched on the posting id / path)
+function pickManual(jobs, url) {
+  const clean = (u) => String(u || '').toLowerCase().replace(/[?#].*$/, '').replace(/\/(apply|application)\/?$/, '').replace(/\/+$/, '');
+  const target = clean(url);
+  const id = (target.match(/([a-z0-9-]{6,})$/) || [])[1] || '';
+  return jobs.find((j) => clean(j.url) === target || clean(j.applyUrl) === target)
+    || (id ? jobs.find((j) => clean(j.url).endsWith(id) || clean(j.applyUrl).endsWith(id) || String(j.uid).endsWith(':' + id)) : null)
+    || null;
+}
+
 function parseBody(raw) {
   if (raw === null || raw === undefined) return null;
   if (typeof raw === 'object') return raw;
@@ -256,6 +277,14 @@ function normalize(req, raw) {
         postedAt: null, url: j.url, applyUrl: j.url, salary: pay,
         description: htmlToText([j.description, j.key_responsibilities, j.skills_knowledge_expertise, j.benefits].filter(Boolean).join('\n')) }));
     }
+  } else if (s === 'manual' && typeof raw === 'string' && /<html|<body|<title/i.test(raw)) {
+    const meta = (prop) => { const m = raw.match(new RegExp('<meta[^>]+(?:property|name)=["\']' + prop + '["\'][^>]*content=["\']([^"\']+)', 'i')) || raw.match(new RegExp('<meta[^>]+content=["\']([^"\']+)["\'][^>]*(?:property|name)=["\']' + prop, 'i')); return m ? htmlToText(m[1]).trim() : ''; };
+    const title = meta('og:title') || htmlToText((raw.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [, ''])[1]).trim();
+    const host = (String(req.manualUrl || req.url).match(/^https?:\/\/(?:www\.)?([^/]+)/i) || [, ''])[1];
+    const body = raw.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<nav[\s\S]*?<\/nav>|<footer[\s\S]*?<\/footer>/gi, ' ');
+    out.push(mk({ uid: 'manual:' + (req.manualUrl || req.url), source: 'manual', sourceLabel: 'Link you sent', company: meta('og:site_name') || host.split('.').slice(-2, -1)[0] || host,
+      title: title || 'Job posting', location: '', remote: null, postedAt: new Date().toISOString(), url: req.manualUrl || req.url, applyUrl: req.manualUrl || req.url,
+      salary: null, description: htmlToText(body).slice(0, 15000) }));
   } else if (s === 'hiringcafe_mcp' && data && (data.result || data.error)) {
     // tolerant: structuredContent, or JSON inside a text content block
     const r = data.result || {};

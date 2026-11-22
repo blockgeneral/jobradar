@@ -277,7 +277,25 @@ const reports = workflow('JobRadarRprt0001', 'JobRadar · 5 Reports & digest (ho
   a.link('📝 Digest rows', '🗃️ Mark sent');
 });
 
-const all = { send, radar, actions, inbox, replies, reports };
+// ───────────────────────── Chat ─────────────────────────
+// Talk to JobRadar in plain language: http://localhost:5678/webhook/<id>/chat  (./jobradar chat opens it).
+// Only someone signed in to this n8n can use it. The helper service does the work (renderer/chat.js);
+// edits are staged and saved only after you say yes.
+const CHAT_HOOK = 'b7c1a5e0-0c4a-4e1d-9a6b-6a6f62726164';
+const chatWf = workflow('JobRadarChat0001', 'JobRadar · 6 Chat (talk to JobRadar)', (a) => {
+  a.node('💬 Chat with JobRadar', '@n8n/n8n-nodes-langchain.chatTrigger', 1.5, [0, 0], {
+    public: true, mode: 'hostedChat', authentication: 'n8nUserAuth',
+    initialMessages: "Hi! I'm your JobRadar assistant.\nTell me what you'd like to change, in your own words — for example:\n• \"watch Supabase as a dream company\"\n• \"only ping me for scores above 70\"\n• \"why was it quiet today?\"\n• paste a job link and I'll check it now\n• \"interview me\" to strengthen your profile\nI always show you the change and ask before saving.",
+    options: { title: 'JobRadar', subtitle: 'Change anything in plain language. Nothing is saved until you say yes.', inputPlaceholder: 'Tell me what to change, or paste a job link…', responseMode: 'lastNode', showWelcomeScreen: false },
+  }, { webhookId: CHAT_HOOK });
+  a.http('🧠 Ask the helper', [260, 0], { method: 'POST', url: "={{ ($env.RENDERER_URL || 'http://renderer:3100') + '/chat' }}", sendBody: true, contentType: 'json', specifyBody: 'json',
+    jsonBody: '={{ JSON.stringify({ sessionId: $json.sessionId, message: $json.chatInput }) }}', options: { timeout: 300000 } }, { onError: 'continueRegularOutput' });
+  a.code('💬 Reply', [520, 0], O.chat_reply, ['util']);
+  a.link('💬 Chat with JobRadar', '🧠 Ask the helper');
+  a.link('🧠 Ask the helper', '💬 Reply');
+});
+
+const all = { send, radar, actions, inbox, replies, reports, chat: chatWf };
 fs.mkdirSync(path.join(root, 'workflows'), { recursive: true });
 for (const f of fs.readdirSync(path.join(root, 'workflows'))) if (f.endsWith('.json')) fs.unlinkSync(path.join(root, 'workflows', f));
 let errors = 0;

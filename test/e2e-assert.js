@@ -65,7 +65,7 @@ if (channels.includes('email')) {
   assert(jobMails.every((r) => /JR-CMD/.test(r) && /mailto:me\+jobradar@example\.com/.test(r)), 'mailto status buttons'); ok('email ✅/⏭ buttons are mailto commands to the plus-address');
   assert(mails.some((r) => /your[ _]week/i.test(r)), 'report email'); ok('weekly report email sent');
 }
-const out = fs.readdirSync(path.join(T, 'out'));
+const out = fs.readdirSync(path.join(T, 'out')).filter((d) => !d.startsWith('.'));
 assert.equal(out.length, EXP, 'job folders');
 for (const d of out) { const f = fs.readdirSync(path.join(T, 'out', d)); for (const need of ['resume.md', 'cover_letter.md', 'job.json']) assert(f.includes(need), d + ' has ' + need); const nd = f.filter((x) => x.endsWith('.docx')).length; assert(nd === 2 || (nd === 3 && f.includes('what_changed.md')), d + ' docx count'); }
 ok('output/<job>/ has resume.md, cover_letter.md, job.json + the .docx files (+ what_changed.md when edited)');

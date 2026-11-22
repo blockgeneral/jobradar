@@ -2,7 +2,7 @@ FROM node:22-alpine
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
-COPY render.js server.js rerender.js ./
+COPY render.js server.js rerender.js chat.js ./
 ENV PORT=3100 OUTPUT_DIR=/data/output
 USER node
 EXPOSE 3100

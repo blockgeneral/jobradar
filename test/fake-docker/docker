@@ -17,7 +17,7 @@ loadenv() {
 map() { local a="$1"; a="${a//\/home\/node\/jobradar/$P}"; a="${a//\/w\//$P/}"; [ "$a" = /w ] && a="$P"; printf "%s" "$a"; }
 case "${1:-}" in
   info) exit 0;;
-  compose) shift;;
+  compose) shift; [ "${1:-}" = --progress ] && shift 2;;
   *) exit 0;;
 esac
 case "${1:-}" in

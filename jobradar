@@ -20,7 +20,8 @@ asks() { local p="$1" v; read -r -s -p "  $p: " v; echo >&2; printf "%s" "$v"; }
 yes()  { local v; read -r -p "  $1 [${2:-y}/$( [ "${2:-y}" = y ] && echo n || echo y)]: " v; v="${v:-${2:-y}}"; [ "$v" = y ] || [ "$v" = Y ]; }
 
 WF_SEND=JobRadarSend0001; WF_RADAR=JobRadarMain0001; WF_BUTTONS=JobRadarActn0001
-WF_MAIL=JobRadarMail0001; WF_REPLIES=JobRadarRepl0001; WF_REPORTS=JobRadarRprt0001
+WF_MAIL=JobRadarMail0001; WF_REPLIES=JobRadarRepl0001; WF_REPORTS=JobRadarRprt0001; WF_CHAT=JobRadarChat0001
+CHAT_URL=http://localhost:5678/webhook/b7c1a5e0-0c4a-4e1d-9a6b-6a6f62726164/chat
 HOOK="${JOBRADAR_HOOK:-http://127.0.0.1:5678/webhook}"
 API_ANTHROPIC="${ANTHROPIC_BASE_URL:-https://api.anthropic.com}"; API_TG="${TELEGRAM_API_BASE:-https://api.telegram.org}"
 
@@ -33,7 +34,9 @@ env_set() { # env_set KEY VALUE  (creates .env from template if needed)
 }
 channels() { env_get NOTIFY_CHANNELS; }
 has_channel() { case ",$(channels)," in *",$1,"*) return 0;; *) return 1;; esac; }
-dc() { docker compose "$@"; }
+# quiet Docker progress lines ("Container … Created") when this Compose supports it
+DC_QUIET=""; docker compose --progress quiet version >/dev/null 2>&1 && DC_QUIET="--progress quiet"
+dc() { docker compose $DC_QUIET "$@"; }
 n8n_cli() { dc run --rm --no-deps -T n8n "$@" 2>&1 | grep -v -i -E "python task runner|deprecat|N8N_RUNNERS|N8N_COMPRESSION|N8N_UNVERIFIED|Running n8n outside|^\s*-|^$" || true; }
 node_in() { dc run --rm --no-deps -T --entrypoint node n8n "$@"; }
 
@@ -57,11 +60,11 @@ deploy_workflows() {
   # credentials are generated and imported inside one container run — no secrets file on disk
   dc run --rm --no-deps -T --entrypoint sh n8n -c 'node /home/node/jobradar/tools/credentials.js > /tmp/c.json && n8n import:credentials --input=/tmp/c.json' >/dev/null 2>&1 \
     || die "Couldn't save the email settings into n8n. Run ./jobradar logs for details."
-  local ids="$WF_SEND $WF_RADAR $WF_REPORTS"
+  local ids="$WF_SEND $WF_RADAR $WF_REPORTS $WF_CHAT"
   has_channel telegram && ids="$ids $WF_BUTTONS"
   has_channel email && ids="$ids $WF_MAIL"
   [ "$(node_in -e 'try{console.log(require("/home/node/jobradar/settings.json").replyDetection.enabled?1:0)}catch(e){console.log(0)}')" = 1 ] && has_channel email && ids="$ids $WF_REPLIES"
-  for id in $WF_SEND $WF_RADAR $WF_BUTTONS $WF_MAIL $WF_REPLIES $WF_REPORTS; do n8n_cli unpublish:workflow --id=$id >/dev/null; done
+  for id in $WF_SEND $WF_RADAR $WF_BUTTONS $WF_MAIL $WF_REPLIES $WF_REPORTS $WF_CHAT; do n8n_cli unpublish:workflow --id=$id >/dev/null; done
   n8n_cli import:workflow --separate --input=/home/node/jobradar/workflows >/dev/null
   for id in $ids; do n8n_cli publish:workflow --id=$id >/dev/null; done
   ok "workflows installed and switched on ($(echo $ids | wc -w | tr -d ' '))"
@@ -215,7 +218,7 @@ setup_candidate() {
 }
 
 setup_companies() {
-  say ""; say "${B}4 · Companies to watch${N}  ${D}One per line: a careers-page link, or just a company name (watched on every job board). Add * for a dream company. Empty line to finish.${N}"
+  say ""; say "${B}4 · Companies to watch${N}  ${D}One per line: a careers-page link, or just a company name (watched on every job board). Add * for a dream company. Empty line to finish — or skip this and add them later in the chat (./jobradar chat).${N}"
   [ -f settings.json ] || { cp settings.example.json settings.json; ok "created settings.json from the example"; }
   say "  Watching now:"; node_in /home/node/jobradar/tools/settings-tool.js list-companies < settings.json || true
   local urls=() u
@@ -250,7 +253,9 @@ cmd_setup() {
   (curl -s -m 900 -X POST "$HOOK/jobradar-run" >/dev/null 2>&1 &)
   say ""
   say "${G}${B}All set.${N} New matches arrive within ~15 minutes of being published, while Docker is running."
-  say "  • Change what you get:   ${B}settings.json${N} and ${B}candidate/${N} (applies on the next run)"
+  say "  • Change anything:       ${B}./jobradar chat${N} — tell it in plain words (companies, filters, your profile, \"why so quiet?\", or paste a job link)"
+  say "                           ${D}$CHAT_URL${N}"
+  say "  • Or edit by hand:       ${B}settings.json${N} and ${B}candidate/${N} (applies on the next run)"
   say "  • Your files per job:    ${B}output/${N}$( [ "$IS_WSL" = 1 ] && printf '  (open it in Windows: explorer.exe output)' )"
   say "  • See it in n8n:         ${B}http://localhost:5678${N} (create a local login on first visit)"
   say "  • Everything else:       ${B}./jobradar help${N}"
@@ -277,12 +282,20 @@ cmd_update()   {
 }
 cmd_rerender() { need_docker; [ $# -ge 1 ] || { say "usage: ./jobradar rerender <job folder in output/>"; ls -1t output | head -10 | sed 's/^/  /'; exit 1; }; dc exec -T renderer node rerender.js "$(basename "$1")"; }
 cmd_companies(){ need_docker; setup_companies; say "Applies on the next run."; }
+cmd_chat()     {
+  say "  ${B}JobRadar chat${N} — sign in with your n8n login if asked, then tell it what to change."
+  say "  $CHAT_URL"
+  if [ "$(uname -s)" = Darwin ]; then open "$CHAT_URL" 2>/dev/null || true
+  elif [ "$IS_WSL" = 1 ] && command -v cmd.exe >/dev/null 2>&1; then cmd.exe /c start "" "$CHAT_URL" >/dev/null 2>&1 || true
+  elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$CHAT_URL" >/dev/null 2>&1 || true; fi
+}
 cmd_import()   { need_docker; [ -f settings.json ] || cp settings.example.json settings.json; import_cv; }
 cmd_help() { cat <<EOF
 ${B}JobRadar${N} — finds jobs minutes after they're posted, tailors your files, notifies you. You apply.
 
   ./jobradar setup        first-time setup (safe to re-run to change anything)
   ./jobradar run          check the job boards right now
+  ./jobradar chat         change anything in plain words (opens the chat page)
   ./jobradar companies    add companies to watch (paste career-page links)
   ./jobradar import-cv    import a CV (PDF) → review + your candidate files
   ./jobradar rerender X   rebuild the Word/PDF files after editing output/X/*.md
@@ -297,6 +310,6 @@ EOF
 
 case "${1:-help}" in
   setup) cmd_setup;; run) cmd_run;; report) shift; cmd_report "$@";; start) cmd_start;; stop) cmd_stop;; restart) cmd_restart;;
-  logs) shift; cmd_logs "$@";; status) cmd_status;; update) cmd_update;; rerender) shift; cmd_rerender "$@";; companies) cmd_companies;; import-cv) cmd_import;;
+  logs) shift; cmd_logs "$@";; status) cmd_status;; update) cmd_update;; rerender) shift; cmd_rerender "$@";; companies) cmd_companies;; chat) cmd_chat;; import-cv) cmd_import;;
   *) cmd_help;;
 esac

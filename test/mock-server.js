@@ -111,6 +111,15 @@ http.createServer(async (req, res) => {
       // Mirror the Claude 5.5 API: forced tool use and sampling params are 400s; JSON comes back as a text block.
       if (j.tool_choice && ['tool', 'any'].includes(j.tool_choice.type)) return send(400, { type: 'error', error: { type: 'invalid_request_error', message: 'tool_choice: type "tool" and "any" are not supported for this model.' } });
       if (['temperature', 'top_p', 'top_k'].some((k) => k in j)) return send(400, { type: 'error', error: { type: 'invalid_request_error', message: 'temperature is not supported for this model.' } });
+      if (Array.isArray(j.tools) && j.tools.length) { // the chat helper (tool use, no forced tool_choice)
+        log('anthropic', { tool: 'chat', model: j.model });
+        const last = j.messages[j.messages.length - 1];
+        const said = typeof last.content === 'string' ? last.content : '';
+        const m = said.match(/watch (.+?) as a dream/i);
+        if (m) return send(200, { id: 'msg_c', type: 'message', role: 'assistant', model: j.model, stop_reason: 'tool_use',
+          content: [{ type: 'text', text: 'On it.' }, { type: 'tool_use', id: 'tu_w1', name: 'watch_company', input: { name: m[1], dream: true } }] });
+        return send(200, { id: 'msg_c2', type: 'message', role: 'assistant', model: j.model, stop_reason: 'end_turn', content: [{ type: 'text', text: 'Staged that for you. Save?' }] });
+      }
       const fmt = j.output_config && j.output_config.format;
       if (!fmt || fmt.type !== 'json_schema') return send(400, { type: 'error', error: { type: 'invalid_request_error', message: 'mock: expected output_config.format json_schema' } });
       const bad = JSON.stringify(fmt.schema).match(/"(minimum|maximum|maxItems|minLength|maxLength)"/);

@@ -194,3 +194,11 @@ return $input.all().filter((it) => it.json.kind === 'row_update').map((it) => ({
 
 //@node reports_msgs
 return $input.all().filter((it) => it.json.kind !== 'row_update');
+
+
+//@node chat_reply
+// 💬 Reply — hand the helper's answer to the chat window (or explain what went wrong)
+const r = $input.first().json || {};
+if (r.output) return [{ json: { output: r.output } }];
+const err = (r.error && (r.error.message || r.error)) || 'no answer';
+return [{ json: { output: "Sorry — I couldn't do that just now (" + String(err).slice(0, 160) + "). Is JobRadar running? Try `./jobradar status`." } }];

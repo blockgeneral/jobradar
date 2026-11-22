@@ -29,12 +29,16 @@ services:
     build: ./renderer
     image: jobradar-renderer:local
     restart: unless-stopped
-    user: "${JOBRADAR_UID:-1000}:${JOBRADAR_GID:-1000}"   # files in output/ belong to you
+    user: "${JOBRADAR_UID:-1000}:${JOBRADAR_GID:-1000}"   # files it writes belong to you
+    env_file: .env                         # the chat uses your Claude key
     environment:
       - GOTENBERG_URL=http://gotenberg:3000
       - OUTPUT_DIR=/data/output
+      - JOBRADAR_PROJECT=/project           # the chat edits settings.json + candidate/ (after you say yes)
+      - N8N_URL=http://n8n:5678
     volumes:
       - ./output:/data/output
+      - ./:/project
     depends_on:
       - gotenberg
 

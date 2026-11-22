@@ -1,0 +1,25 @@
+// Checks for the chat page pieces after test/e2e.sh: status reports, a pasted link, the helper's staged-then-saved edit.
+const fs = require('fs'); const path = require('path'); const assert = require('assert');
+const T = process.argv[2];
+const ok = (m) => console.log('  ✔ ' + m);
+const status = fs.readFileSync(path.join(T, 'out/.jobradar/status.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+assert(status.some((s) => s.part === 'normalize' && s.stats && s.stats.fetched > 0), 'normalize stats'); 
+assert(status.some((s) => s.part === 'gate' && Array.isArray(s.instant)), 'gate stats');
+ok(`radar runs report their numbers to the helper (${status.length} entries) — the chat can answer "why so quiet?"`);
+const manual = status.filter((s) => s.manualUrl === 'https://jobs.ashbyhq.com/n8n/de').pop();
+assert(manual && manual.manual && manual.manual.found, 'manual verdict ' + JSON.stringify(manual));
+assert(manual.manual.would_normally_skip !== undefined, 'reasons listed');
+ok(`pasted link screened through n8n's own job board feed (score ${manual.manual.score}${manual.manual.would_normally_skip.length ? '; normally skipped: ' + manual.manual.would_normally_skip.join(', ') : ''})`);
+const msgs = fs.readFileSync(path.join(T, 'mock/telegram_messages.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+assert(msgs.some((m) => /German-speaking/.test(m.text || '') && /You asked for this one/.test(m.text || '')), 'card for the pasted link');
+ok('…and its card arrived in Telegram, saying it would normally have been skipped and why');
+const c1 = JSON.parse(fs.readFileSync(path.join(T, 'chat1.json'), 'utf8'));
+const c2 = JSON.parse(fs.readFileSync(path.join(T, 'chat2.json'), 'utf8'));
+assert(/Ready to save/.test(c1.output) && /Cool Co/.test(c1.output), c1.output);
+const settings = JSON.parse(fs.readFileSync(path.join(T, 'work/settings.json'), 'utf8'));
+assert(/Saved: settings.json/.test(c2.output) && settings.companies.some((c) => c.name === 'Cool Co' && c.dream), c2.output);
+ok('chat: "watch Cool Co as a dream company" → shown before saving → "yes" → saved to settings.json');
+const code = fs.readFileSync(path.join(T, 'chatpage.code'), 'utf8').trim();
+assert(code !== '404' && code !== '000', 'chat page code ' + code);
+ok(`chat page is live in n8n (HTTP ${code} — sign-in protected)`);
+console.log('\nCHAT E2E PASSED');
