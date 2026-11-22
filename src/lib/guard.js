@@ -91,6 +91,90 @@ function claimCheck(sourceText, outputText) {
   return issues;
 }
 
+// What tailoring changed in the resume, line by line: reworded (before → after), moved, added, removed.
+// Lines are compared without markdown styling; the order check uses the longest common subsequence.
+function resumeDiff(baseMd, tailoredMd) {
+  const clean = (md) => stripHtmlComments(String(md || '')).split('\n').map((l) => l.trim()).filter((l) => l && !/^-{3,}$/.test(l));
+  const norm = (l) => l.replace(/^[-*•]\s+/, '').replace(/[*_`#]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const words = (l) => new Set(norm(l).match(/[a-z0-9$€%.+]+/g) || []);
+  const sim = (a, b) => { const A = words(a), B = words(b); let n = 0; for (const w of A) if (B.has(w)) n++; return n / Math.max(1, Math.max(A.size, B.size)); };
+  const base = clean(baseMd), tail = clean(tailoredMd);
+  const sectionOf = (lines) => { let sec = ''; return lines.map((l) => { if (/^#\s/.test(l)) sec = ''; else if (/^#{2,3}\s/.test(l)) sec = l.replace(/^#+\s*/, ''); return sec; }); }; // '' = name/headline area
+  const bSec = sectionOf(base), tSec = sectionOf(tail);
+  const bN = base.map(norm), tN = tail.map(norm);
+  // LCS over identical lines → anything identical but outside it was moved
+  const m = bN.length, n = tN.length, dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = m - 1; i >= 0; i--) for (let j = n - 1; j >= 0; j--) dp[i][j] = bN[i] === tN[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const inLcsB = new Set(), inLcsT = new Set();
+  for (let i = 0, j = 0; i < m && j < n;) { if (bN[i] === tN[j]) { inLcsB.add(i); inLcsT.add(j); i++; j++; } else if (dp[i + 1][j] >= dp[i][j + 1]) i++; else j++; }
+  const items = [];
+  const usedB = new Set(inLcsB);
+  // moved: identical text, different position
+  for (let j = 0; j < n; j++) {
+    if (inLcsT.has(j)) continue;
+    const i = bN.findIndex((x, k) => x === tN[j] && !usedB.has(k));
+    if (i >= 0) { usedB.add(i); inLcsT.add(j); if (!/^#/.test(tail[j])) items.push({ type: 'moved', section: tSec[j], after: tail[j] }); }
+  }
+  // reworded: a new line paired with the most similar leftover original; otherwise added
+  for (let j = 0; j < n; j++) {
+    if (inLcsT.has(j)) continue;
+    let best = -1, score = 0;
+    for (let i = 0; i < m; i++) if (!usedB.has(i)) { const sc = sim(base[i], tail[j]); if (sc > score) { score = sc; best = i; } }
+    if (best >= 0 && score >= 0.35) { usedB.add(best); items.push({ type: 'reworded', section: tSec[j], before: base[best], after: tail[j] }); }
+    else items.push({ type: 'added', section: tSec[j], after: tail[j] });
+  }
+  for (let i = 0; i < m; i++) if (!usedB.has(i)) items.push({ type: 'removed', section: bSec[i], before: base[i] });
+  const count = (t) => items.filter((x) => x.type === t).length;
+  const counts = { reworded: count('reworded'), added: count('added'), removed: count('removed'), moved: count('moved') };
+  const changedLines = counts.reworded + counts.added + counts.removed;
+  const isSummary = (x) => /summary|profile|about/i.test(x.section || '') || /^\*\*.*\*\*$/.test(x.after || x.before || '') || (!x.section);
+  const sumChanged = items.some((x) => x.type !== 'moved' && isSummary(x));
+  const parts = [];
+  if (sumChanged) parts.push('summary/headline rewritten');
+  const other = items.filter((x) => !isSummary(x));
+  const rw = other.filter((x) => x.type === 'reworded').length, ad = other.filter((x) => x.type === 'added').length, rm = other.filter((x) => x.type === 'removed').length, mv = other.filter((x) => x.type === 'moved').length;
+  if (rw) parts.push(`${rw} line${rw > 1 ? 's' : ''} reworded`);
+  if (ad) parts.push(`${ad} added`);
+  if (rm) parts.push(`${rm} removed`);
+  if (mv) parts.push(`${mv} moved`);
+  return { items, counts, unchanged: !changedLines && !counts.moved, pct: Math.round((100 * changedLines) / Math.max(1, m)), summary: parts.length ? parts.join(' · ') : 'unchanged' };
+}
+
+// "What changed" review document (markdown, rendered like the resume)
+function changesDoc(diff, company, slots) {
+  const L = [`# What changed — ${company}`, '', `Your base resume vs. the version tailored for ${company}: ${diff.summary}. Everything not listed here is word for word your base resume.`, ''];
+  const by = (t) => diff.items.filter((x) => x.type === t);
+  const strip = (l) => l.replace(/^[-*•]\s+/, '').replace(/\*\*/g, '');
+  const sentences = (t) => strip(t).split(/(?<=[.!?])\s+(?=[A-Z(])/).map((x) => x.trim()).filter(Boolean);
+  if (by('reworded').length) {
+    L.push('## Reworded');
+    for (const x of by('reworded')) {
+      if (x.before.length > 160 && x.after.length > 160) { // long paragraph: show only the sentences that differ
+        const b = sentences(x.before), a = sentences(x.after);
+        const gone = b.filter((y) => !a.includes(y)), fresh = a.filter((y) => !b.includes(y));
+        L.push(`- **In "${strip(x.before).slice(0, 40)}…":**`);
+        for (const g of gone) L.push(`  - **Was:** ${g}`);
+        for (const f of fresh) L.push(`  - **Now:** ${f}`);
+        L.push('');
+      } else L.push(`- **Before:** ${strip(x.before)}`, `- **After:** ${strip(x.after)}`, '');
+    }
+  }
+  if (by('added').length) { L.push('## Added'); for (const x of by('added')) L.push(`- ${x.after.replace(/^[-*•]\s+/, '')}`); L.push(''); }
+  if (by('removed').length) { L.push('## Removed (still in your base resume)'); for (const x of by('removed')) L.push(`- ${x.before.replace(/^[-*•]\s+/, '')}`); L.push(''); }
+  if (by('moved').length) {
+    L.push('## Reordered (same words, new position)');
+    for (const x of by('moved')) L.push(`- ${strip(x.after).replace(/\*\*/g, '').split(/\s+/).slice(0, 9).join(' ')}…`);
+    L.push('');
+  }
+  if (slots && (slots.WHY_COMPANY || slots.LOCATION_LINE)) {
+    L.push('## Cover letter — the only new text', 'Your letter is unchanged except for these slots:', '');
+    if (slots.HIRING_TEAM) L.push(`- **Greeting:** Dear ${slots.HIRING_TEAM},`);
+    if (slots.WHY_COMPANY) L.push(`- **Why this company:** ${slots.WHY_COMPANY}`);
+    if (slots.LOCATION_LINE) L.push(`- **Location line:** ${slots.LOCATION_LINE}`);
+  }
+  return L.join('\n').trim() + '\n';
+}
+
 function keywordCoverage(keywords, text) {
   const t = String(text || '').toLowerCase();
   const covered = [], missing = [];

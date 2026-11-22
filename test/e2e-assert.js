@@ -32,8 +32,12 @@ if (channels.includes('telegram')) {
   if (lie) { assert(/95%/.test(lie.text) && /⚠️/.test(lie.text), 'planted number flagged on card'); ok('a planted fake number ("95%") is flagged on the card'); }
   const albums = L('telegram_albums');
   assert.equal(albums.length, EXP, 'albums');
-  for (const a of albums) { assert.equal(a.files.length, 2); assert(a.files.every((f) => /\.docx$/.test(f.filename) && f.magic === 'PK')); }
+  for (const a of albums) { assert(a.files.length === 2 || a.files.length === 3); assert(a.files.every((f) => /\.docx$/.test(f.filename) && f.magic === 'PK')); }
   ok(`${EXP} file album(s), each resume + cover letter as real .docx`);
+  const withChanges = albums.filter((a) => a.files.some((f) => /What_Changed/.test(f.filename)));
+  assert(withChanges.length >= 1 && withChanges.every((a) => a.files.length === 3), 'What changed attached when the resume changed');
+  assert(cards.some((c) => /✏️ Resume: .*What changed/.test(c.text)) && cards.some((c) => /✏️ Resume unchanged/.test(c.text)), 'card change line');
+  ok(`"What changed" file attached where tailoring edited the resume (${withChanges.length}), card says what changed or "unchanged"`);
   const calls = L('telegram_calls');
   assert.equal(calls.filter((c) => c.method === 'answerCallbackQuery' && !/^Watching/.test(c.body.text || '')).length, 1 + SK, 'presses answered (foreign chat ignored)');
   const edits = calls.filter((c) => c.method === 'editMessageReplyMarkup');
@@ -56,14 +60,15 @@ if (channels.includes('telegram')) {
 if (channels.includes('email')) {
   const mails = L('smtp').map((m) => m.raw);
   const jobMails = mails.filter((r) => /Content-Disposition: attachment/i.test(r) && /\.docx/.test(r));
-  assert.equal(jobMails.length, EXP, 'job emails with attachments'); ok(`${EXP} job email(s), each with 2 .docx attachments`);
+  assert.equal(jobMails.length, EXP, 'job emails with attachments'); ok(`${EXP} job email(s) with the .docx attachments`);
+  assert(jobMails.some((r) => /What_Changed/.test(r)), 'What changed attached to an email'); ok('"What changed" also attached to the email where the resume changed');
   assert(jobMails.every((r) => /JR-CMD/.test(r) && /mailto:me\+jobradar@example\.com/.test(r)), 'mailto status buttons'); ok('email ✅/⏭ buttons are mailto commands to the plus-address');
   assert(mails.some((r) => /your[ _]week/i.test(r)), 'report email'); ok('weekly report email sent');
 }
 const out = fs.readdirSync(path.join(T, 'out'));
 assert.equal(out.length, EXP, 'job folders');
-for (const d of out) { const f = fs.readdirSync(path.join(T, 'out', d)); for (const need of ['resume.md', 'cover_letter.md', 'job.json']) assert(f.includes(need), d + ' has ' + need); assert(f.filter((x) => x.endsWith('.docx')).length === 2); }
-ok('output/<job>/ has resume.md, cover_letter.md, job.json + 2 .docx');
+for (const d of out) { const f = fs.readdirSync(path.join(T, 'out', d)); for (const need of ['resume.md', 'cover_letter.md', 'job.json']) assert(f.includes(need), d + ' has ' + need); const nd = f.filter((x) => x.endsWith('.docx')).length; assert(nd === 2 || (nd === 3 && f.includes('what_changed.md')), d + ' docx count'); }
+ok('output/<job>/ has resume.md, cover_letter.md, job.json + the .docx files (+ what_changed.md when edited)');
 
 // tracker table
 const { execFileSync } = require('child_process');

@@ -1,7 +1,7 @@
 //@node send_route
 // 🧭 Route — drop envelopes for channels that aren't switched on
 const ch = channelsEnabled();
-const ok = { tg_text: 'telegram', tg_album: 'telegram', tg_call: 'telegram', email: 'email' };
+const ok = { tg_text: 'telegram', tg_album: 'telegram', tg_album3: 'telegram', tg_call: 'telegram', email: 'email' };
 return $input.all().filter((it) => ch.includes(ok[it.json.kind]));
 
 //@node actions_poll

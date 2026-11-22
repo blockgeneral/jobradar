@@ -57,6 +57,7 @@ function telegramCard(c, prefs) {
   ];
   if (fit.why && fit.why[0]) lines.push(`✨ ${escHtml(String(fit.why[0]).slice(0, 160))}`);
   if ((fit.values_match || [])[0]) lines.push(`💚 ${escHtml(fit.values_match.slice(0, detailed ? 3 : 1).join(' · ').slice(0, 200))}`);
+  if (c.changes) lines.push(c.changes.unchanged ? '✏️ Resume unchanged — your base version' : `✏️ Resume: ${escHtml(c.changes.summary)} — see “What changed”`);
   const checks = topChecks(c, detailed ? 5 : 3);
   if (checks.length) lines.push('', '⚠️ <b>Check before sending</b>', ...checks.map((x) => '• ' + escHtml(String(x).slice(0, 180))));
   if (detailed) {
@@ -105,10 +106,11 @@ function emailForJob(c, prefs, to) {
   <div style="font-size:15px;margin-bottom:10px"><b style="font-size:22px">${score}</b>/100${fit.skills_fit != null ? ` · skills ${fit.skills_fit} · values ${fit.values_fit}` : ''}${job.salary ? ' · ' + escHtml(job.salary) : ''}</div>
   ${fit.company_note ? `<div style="font-size:13px;color:#5b6b7f;margin-bottom:8px">${escHtml(fit.company_note)}</div>` : ''}
   ${fit.why && fit.why[0] ? `<div style="margin-bottom:12px">✨ ${escHtml(fit.why[0])}</div>` : ''}
+  ${c.changes ? `<div style="margin-bottom:12px">✏️ ${c.changes.unchanged ? 'Resume unchanged — your base version' : 'Resume: ' + escHtml(c.changes.summary) + ' — see the “What changed” attachment'}</div>` : ''}
   ${checks.length ? `<div style="background:#fff7e6;border:1px solid #f5d38b;border-radius:8px;padding:10px 12px;margin-bottom:14px"><b>⚠️ Check before sending</b><ul style="margin:6px 0 0;padding-left:18px">${li(checks)}</ul></div>` : ''}
   <div>${btn(job.applyUrl || job.url, '🚀 Apply', true)}${job.url && job.url !== job.applyUrl ? btn(job.url, '📄 Job post') : ''}${b.linkedinSearch ? contactLinks(job, fit, review).map((l) => btn(l.url, l.text)).join('') : ''}</div>
   ${b.statusButtons ? `<div style="margin-top:4px">${btn(mailto(to, 'APPLIED', c.jrId, 'applied'), '✅ I applied')}${btn(mailto(to, 'SKIP', c.jrId, 'skipped'), '⏭ Skip')}</div>` : ''}
-  <div style="font-size:12px;color:#7a8696;margin-top:6px">📎 Your tailored resume and cover letter are attached.</div>
+  <div style="font-size:12px;color:#7a8696;margin-top:6px">📎 Your tailored resume and cover letter are attached${c.changesMd ? ', plus “What changed”' : ''}.</div>
  </div>
  <div style="padding:16px 6px;font-size:14px;line-height:1.5;color:#33404f">
   ${review && review.role_summary ? `<p><b>The role.</b> ${escHtml(review.role_summary)}</p>` : ''}

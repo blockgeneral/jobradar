@@ -3,7 +3,7 @@
 const fs = require('fs'); const path = require('path'); const assert = require('assert');
 const ROOT = path.join(__dirname, '..');
 const libSrc = ['util', 'sources', 'prompts', 'guard', 'notify'].map((n) => fs.readFileSync(path.join(ROOT, 'src/lib', n + '.js'), 'utf8')).join('\n');
-const L = new Function('$env', libSrc + '; return { normalize, watchList, normName, preFilter, checkTailoring, keywordCoverage, toIso, detectAts, companiesFromSettings, buildRequests, parseBody, telegramCard, emailForJob, computeReport, telegramReport, inQuietHours, shortHash, fillCoverLetter, countryLock, claimCheck, contactLinks };')({ NOTIFY_CHANNELS: 'telegram,email' });
+const L = new Function('$env', libSrc + '; return { normalize, watchList, normName, preFilter, checkTailoring, keywordCoverage, toIso, detectAts, companiesFromSettings, buildRequests, parseBody, telegramCard, emailForJob, computeReport, telegramReport, inQuietHours, shortHash, fillCoverLetter, countryLock, claimCheck, contactLinks, resumeDiff, changesDoc };')({ NOTIFY_CHANNELS: 'telegram,email' });
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('  ✔ ' + name); };
 const now = Date.now();
 
@@ -238,6 +238,24 @@ async function runNode(code, { input = [], nodes = {}, env = {}, state = {} }) {
     assert.deepEqual(l.map((x) => x.text), ['👤 Sam Lee (recruiter)', '🔎 Hiring team']);
   });
   t('👤 a made-up non-LinkedIn URL is ignored', () => assert.ok(!/evil/.test(L.contactLinks(job, { contact_name: 'Jane Doe', contact_url: 'https://evil.example/x' }, null)[0].url)));
+}
+
+// ✏️ what tailoring changed
+{
+  const base = '# Sam\nBackend Engineer\n\n## Summary\nI build payment systems. I like Go.\n\n## Experience\n- Rewrote checkout in Go\n- Cut p99 latency by 40%\n- Mentored three engineers\n- Ran on-call for payments';
+  t('✏️ identical resume → unchanged', () => assert.equal(L.resumeDiff(base, base).unchanged, true));
+  const tailored = base.replace('Backend Engineer', 'Platform Engineer').replace('- Mentored three engineers\n- Ran on-call for payments', '- Ran on-call for payments\n- Mentored three engineers').replace('- Cut p99 latency by 40%', '- Cut p99 checkout latency by 40%');
+  const d = L.resumeDiff(base, tailored);
+  t('✏️ reworded lines are paired before → after', () => {
+    const rw = d.items.filter((x) => x.type === 'reworded').map((x) => [x.before, x.after]);
+    assert.deepEqual(rw, [['Backend Engineer', 'Platform Engineer'], ['- Cut p99 latency by 40%', '- Cut p99 checkout latency by 40%']]);
+  });
+  t('✏️ reordered bullets count as moved, not changed', () => assert.equal(d.counts.moved, 1));
+  t('✏️ card summary + review doc', () => {
+    assert.match(d.summary, /summary\/headline rewritten · 1 line reworded · 1 moved/);
+    const doc = L.changesDoc(d, 'Acme', { HIRING_TEAM: 'Acme Team', WHY_COMPANY: 'I use Acme daily.', LOCATION_LINE: 'Remote works.' });
+    assert.ok(/\*\*Before:\*\* Cut p99 latency by 40%/.test(doc) && /\*\*After:\*\* Cut p99 checkout latency/.test(doc) && /I use Acme daily/.test(doc), doc);
+  });
 }
 console.log(`\nunit OK (${n} checks)`);
 })().catch((e) => { console.error(e); process.exit(1); });

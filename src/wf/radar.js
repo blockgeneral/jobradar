@@ -216,10 +216,14 @@ for (let i = 0; i < resp.length; i++) {
   const jrId = 'JR-' + shortHash(job.uid);
   const folder = `${new Date(now).toISOString().slice(0, 10)}_${slugify(job.company, 30)}_${slugify(job.title, 40)}`;
   const co = slugify(job.company, 30).replace(/-/g, '_');
-  const docs = { resumeBase: `${nameFile}_Resume_${co}`, coverBase: `${nameFile}_Cover_Letter_${co}` };
+  const docs = { resumeBase: `${nameFile}_Resume_${co}`, coverBase: `${nameFile}_Cover_Letter_${co}`, changesBase: `${nameFile}_What_Changed_${co}` };
+  // what tailoring changed vs. the base resume: one line on the card + a review file when anything changed
+  const diff = tailored ? resumeDiff(resumeBase, resumeMd) : null;
+  const changes = diff ? { summary: diff.summary, unchanged: diff.unchanged, pct: diff.pct, counts: diff.counts } : null;
+  const changesMd = diff && !diff.unchanged ? changesDoc(diff, job.company, slots) : null;
   const review = t ? { role_summary: t.role_summary, changes: t.changes, verify: t.verify, intro_call_prep: t.intro_call_prep, outreach_note: t.outreach_note, team_search: t.team_search } : null;
-  out.push({ json: { jrId, job, fit, review, issues, warnings, keywordCoverage: kw, resumeMd, coverLetter, folder, docs, formats, preview: !!m.preview,
-    record: { jrId, job, fit, review, issues, warnings, keywordCoverage: kw, docs, formats, createdAt: new Date(now).toISOString() } } });
+  out.push({ json: { jrId, job, fit, review, issues, warnings, keywordCoverage: kw, changes, changesMd, resumeMd, coverLetter, folder, docs, formats, preview: !!m.preview,
+    record: { jrId, job, fit, review, issues, warnings, keywordCoverage: kw, changes, docs, formats, createdAt: new Date(now).toISOString() } } });
 }
 return out;
 
@@ -232,6 +236,7 @@ for (const it of jobs) {
   for (const format of j.formats) {
     out.push({ json: { jrId: j.jrId, prop: `resume_${format}`, body: { folder: j.folder, fileBase: j.docs.resumeBase, kind: 'resume', format, markdown: j.resumeMd, title: `${j.docs.resumeBase}` } } });
     out.push({ json: { jrId: j.jrId, prop: `cover_${format}`, body: { folder: j.folder, fileBase: j.docs.coverBase, kind: 'letter', format, markdown: j.coverLetter, title: `${j.docs.coverBase}` } } });
+    if (j.changesMd && j.docs.changesBase) out.push({ json: { jrId: j.jrId, prop: `changes_${format}`, body: { folder: j.folder, fileBase: j.docs.changesBase, kind: 'resume', format, markdown: j.changesMd, title: `${j.docs.changesBase}` } } });
   }
 }
 return out;
@@ -239,7 +244,8 @@ return out;
 //@node save_sources
 // 🗂️ Editable sources — resume.md, cover_letter.md and job.json next to the files (for ./jobradar rerender)
 return $input.all().map((it) => ({ json: { body: { folder: it.json.folder, files: {
-  'resume.md': it.json.resumeMd, 'cover_letter.md': it.json.coverLetter, 'job.json': JSON.stringify(it.json.record, null, 2) } } } }));
+  'resume.md': it.json.resumeMd, 'cover_letter.md': it.json.coverLetter, 'job.json': JSON.stringify(it.json.record, null, 2),
+  ...(it.json.changesMd ? { 'what_changed.md': it.json.changesMd } : {}) } } } }));
 
 //@node bundle
 // 📦 Bundle — files per job + the notifications to send (Telegram card + album, and/or one email)
@@ -271,10 +277,13 @@ for (const c of jobs) {
     if (c.preview) card.text = '👋 <i>First run: a match from the last few days.</i>\n\n' + card.text;
     out.push({ json: { kind: 'tg_text', jrId: c.jrId, tg: card } });
     for (const fmt of c.formats) {
-      const r = bins[`resume_${fmt}`], cv = bins[`cover_${fmt}`];
+      const r = bins[`resume_${fmt}`], cv = bins[`cover_${fmt}`], ch = bins[`changes_${fmt}`];
       if (!r || !cv) continue;
-      out.push({ json: { kind: 'tg_album', jrId: c.jrId, silent: quiet, media: [{ type: 'document', media: 'attach://doc1' }, { type: 'document', media: 'attach://doc2', caption: `${c.job.company} · ${fmt.toUpperCase()}` }] },
-        binary: { doc1: r, doc2: cv } });
+      const media = [{ type: 'document', media: 'attach://doc1' }, { type: 'document', media: 'attach://doc2' }];
+      const binary = { doc1: r, doc2: cv };
+      if (ch) { media.push({ type: 'document', media: 'attach://doc3' }); binary.doc3 = ch; }
+      media[media.length - 1].caption = `${c.job.company} · ${fmt.toUpperCase()}`;
+      out.push({ json: { kind: ch ? 'tg_album3' : 'tg_album', jrId: c.jrId, silent: quiet, media }, binary });
     }
   }
   if (channels.includes('email')) {

@@ -80,8 +80,8 @@ const readFiles = (a, nm, pos, glob) => a.node(nm, 'n8n-nodes-base.readWriteFile
 const send = workflow('JobRadarSend0001', 'JobRadar · 9 Send (used by the others)', (a) => {
   a.node('📨 From other workflows', 'n8n-nodes-base.executeWorkflowTrigger', 1.1, [0, 0], { inputSource: 'passthrough' });
   a.code('🧭 Route', [220, 0], O.send_route, ['util']);
-  a.node('🔀 By kind', 'n8n-nodes-base.switch', 3.2, [440, 0], { mode: 'expression', numberOutputs: 3,
-    output: "={{ ({ tg_text: 0, tg_album: 1, email: 2 })[$json.kind] ?? 0 }}", options: {} });
+  a.node('🔀 By kind', 'n8n-nodes-base.switch', 3.2, [440, 0], { mode: 'expression', numberOutputs: 4,
+    output: "={{ ({ tg_text: 0, tg_album: 1, email: 2, tg_album3: 3 })[$json.kind] ?? 0 }}", options: {} });
   a.http('💬 Telegram message', [700, -180], { method: 'POST', url: `={{ ${TG} + '/sendMessage' }}`, sendBody: true, contentType: 'json', specifyBody: 'json',
     jsonBody: '={{ JSON.stringify(Object.assign({ chat_id: $env.TELEGRAM_CHAT_ID }, $json.tg)) }}',
     options: { timeout: 30000, batching: { batch: { batchSize: 1, batchInterval: 400 } } } }, { onError: 'continueRegularOutput' });
@@ -93,6 +93,16 @@ const send = workflow('JobRadarSend0001', 'JobRadar · 9 Send (used by the other
       { parameterType: 'formBinaryData', name: 'doc1', inputDataFieldName: 'doc1' },
       { parameterType: 'formBinaryData', name: 'doc2', inputDataFieldName: 'doc2' },
     ] }, options: { timeout: 60000, batching: { batch: { batchSize: 1, batchInterval: 600 } } } }, { onError: 'continueRegularOutput' });
+  // same, with the "What changed" review as a third file (n8n needs a fixed list of binary fields per node)
+  a.http('📎 Telegram files (album + changes)', [700, 360], { method: 'POST', url: `={{ ${TG} + '/sendMediaGroup' }}`, sendBody: true, contentType: 'multipart-form-data',
+    bodyParameters: { parameters: [
+      { parameterType: 'formData', name: 'chat_id', value: '={{ $env.TELEGRAM_CHAT_ID }}' },
+      { parameterType: 'formData', name: 'media', value: '={{ JSON.stringify($json.media) }}' },
+      { parameterType: 'formData', name: 'disable_notification', value: '={{ $json.silent ? "true" : "false" }}' },
+      { parameterType: 'formBinaryData', name: 'doc1', inputDataFieldName: 'doc1' },
+      { parameterType: 'formBinaryData', name: 'doc2', inputDataFieldName: 'doc2' },
+      { parameterType: 'formBinaryData', name: 'doc3', inputDataFieldName: 'doc3' },
+    ] }, options: { timeout: 60000, batching: { batch: { batchSize: 1, batchInterval: 600 } } } }, { onError: 'continueRegularOutput' });
   a.node('✉️ Email', 'n8n-nodes-base.emailSend', 2.1, [700, 180], {
     fromEmail: "={{ $env.SMTP_FROM || ('JobRadar <' + $env.SMTP_USER + '>') }}", toEmail: '={{ $json.to || $env.NOTIFY_EMAIL_TO || $env.SMTP_USER }}',
     subject: '={{ $json.subject }}', emailFormat: 'both', text: '={{ $json.text || "" }}', html: '={{ $json.html }}',
@@ -103,6 +113,7 @@ const send = workflow('JobRadarSend0001', 'JobRadar · 9 Send (used by the other
   a.linkOut('🔀 By kind', 0, '💬 Telegram message');
   a.linkOut('🔀 By kind', 1, '📎 Telegram files (album)');
   a.linkOut('🔀 By kind', 2, '✉️ Email');
+  a.linkOut('🔀 By kind', 3, '📎 Telegram files (album + changes)');
 });
 
 // ───────────────────────── Radar ─────────────────────────
