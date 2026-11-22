@@ -241,9 +241,11 @@ for (let i = 0; i < resp.length; i++) {
     instant.push({ job, fit, warnings: lockWarn.concat(why.length ? ['You asked for this one — normally skipped: ' + why.join('; ')] : []) });
     continue;
   }
-  if (job.light) { // LinkedIn alert, posting not on a public job board: title-only card, nothing tailored
+  if (job.light) { // LinkedIn alert, posting not on a public job board: nothing tailored. Same bar as everything else:
+    // dream or ≥ instantAt → title-only card now; ≥ the skills minimum → daily "worth a look" list; else dropped.
     if (hardNo || (low && !job.dream)) continue;
-    light.push({ job, fit, warnings: lockWarn });
+    if (job.dream || fit.score >= instantAt) light.push({ job, fit, warnings: lockWarn });
+    else if (fit.score >= minS) digest.push({ job, fit, warnings: lockWarn });
     continue;
   }
   if (hardNo || low) continue;

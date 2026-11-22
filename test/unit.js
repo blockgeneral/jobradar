@@ -392,10 +392,12 @@ Unsubscribe: https://www.linkedin.com/comm/psettings/email-unsubscribe?x`;
   // gate → light tier (not tailored), dream light even when the title-only score is low
   const light = L.lightJob(leads[2]); const lightDream = Object.assign(L.lightJob({ id: '44', title: 'AE', company: 'n8n', location: '' }), { dream: true });
   const fitOf = (score) => ({ content: [{ type: 'text', text: JSON.stringify({ score, skills_fit: score, values_fit: 60, location_eligible: 'unclear', english_only: 'unclear', comp_meets_floor: 'unknown', why: ['Title matches'] }) }] });
-  const g = await runNode(RAD.gate, { input: [fitOf(70), fitOf(30)], state: {},
-    nodes: { '🧹 Normalize · dedupe · filter': [{ job: light }, { job: lightDream }], '⚙️ Plan run': [{ _candidate: Object.assign({}, cand, { settings: { scoring: {} } }) }] } });
-  t('💼 gate: title-only jobs become title-only cards, never tailored', () => {
-    assert.deepEqual(g.map((x) => x.json.tier), ['light', 'light']); assert.ok(!g.some((x) => x.json.tailorRequest)); assert.ok(g[0].json.jrId);
+  const light2 = L.lightJob({ id: '55', title: 'AE', company: 'Other', location: '' }), light3 = L.lightJob({ id: '66', title: 'AE', company: 'Third', location: '' });
+  const g = await runNode(RAD.gate, { input: [fitOf(80), fitOf(30), fitOf(55), fitOf(35)], state: {},
+    nodes: { '🧹 Normalize · dedupe · filter': [{ job: light }, { job: lightDream }, { job: light2 }, { job: light3 }], '⚙️ Plan run': [{ _candidate: Object.assign({}, cand, { settings: { scoring: { instantAt: 60 } } }) }] } });
+  t('💼 gate: title-only jobs follow your cutoff (card ≥ instantAt or dream, daily list ≥ minimum, else dropped), never tailored', () => {
+    assert.deepEqual(g.map((x) => x.json.tier + ':' + x.json.job.company).sort(), ['digest:Other', 'light:Hidden GmbH', 'light:n8n']);
+    assert.ok(!g.some((x) => x.json.tailorRequest)); assert.ok(g.find((x) => x.json.tier === 'light').json.jrId);
   });
   t('💼 title-only card: LinkedIn link, says nothing is tailored, Applied/Skip', () => {
     const c = L.lightCard({ job: light, fit: { score: 70, why: ['Title matches'] }, jrId: 'JR-ABC123' }, {});

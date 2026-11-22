@@ -320,8 +320,8 @@ cmd_linkedin() {
   dc stop n8n >/dev/null 2>&1 || true; deploy_workflows; dc up -d >/dev/null; wait_up || die "n8n didn't start. Run ./jobradar logs to see why."
   ok "LinkedIn alerts are on — new alert emails are checked the moment they arrive"
   say ""
-  say "  ${B}Last step, on LinkedIn:${N} search Jobs for each dream company (and your main role, e.g. \"account executive\" remote),"
-  say "  switch on ${B}Set alert${N}, and keep email notifications on. Alerts already set up need nothing."
+  say "  Your existing LinkedIn job alerts need nothing — keep email notifications on. ${D}Each alert email lists LinkedIn's top 6 jobs.${N}"
+  say "  ${D}Optional: add an alert for companies you watch by name only (no careers link) — if they post on LinkedIn.${N}"
   say "  ${D}Turn it off any time: ./jobradar linkedin off${N}"
 }
 cmd_import()   { need_docker; [ -f settings.json ] || cp settings.example.json settings.json; import_cv; }
