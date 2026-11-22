@@ -241,3 +241,42 @@ function discoverCompanies(rows, watched, since) {
   }
   return Object.values(by).map((c) => Object.assign(c, { avg: Math.round(c.sum / c.n) })).sort((a, b) => (b.avg - a.avg) || (b.n - a.n)).slice(0, 5);
 }
+
+// LinkedIn alert job whose posting isn't on a public job board: a title-only card, nothing tailored.
+function lightCard(c, prefs) {
+  const p = prefs || {};
+  const { job, fit } = c;
+  const score = fit.score === null || fit.score === undefined ? '—' : fit.score;
+  const lines = [
+    `🔎 <b>${escHtml(job.title)}</b>`,
+    `🏢 <b>${escHtml(job.company)}</b>${job.dream ? ' ⭐' : ''} · 📍 ${escHtml(shortLoc(job))}`,
+    `📊 <b>${score}</b>/100 <i>(from the title only)</i>`,
+  ];
+  if (fit.why && fit.why[0]) lines.push(`✨ ${escHtml(String(fit.why[0]).slice(0, 160))}`);
+  const checks = [].concat(c.warnings || []).slice(0, 2);
+  if (checks.length) lines.push('', ...checks.map((x) => '⚠️ ' + escHtml(String(x).slice(0, 180))));
+  lines.push('', 'ℹ️ From a LinkedIn alert. This posting isn\'t on the company\'s public job board, so nothing is tailored. If you find it on their careers site, paste that link in the JobRadar chat to get tailored files.');
+  const b = Object.assign({ linkedinSearch: true, statusButtons: true }, p.buttons || {});
+  const kb = [[{ text: '🔗 Open on LinkedIn', url: job.url }]];
+  if (b.linkedinSearch) { const links = contactLinks(job, fit, null).filter((l) => !l.text.startsWith('👤')); if (links.length) kb.push(links); }
+  if (b.statusButtons) kb.push([{ text: '✅ Applied', callback_data: 'ap:' + c.jrId }, { text: '⏭ Skip', callback_data: 'sk:' + c.jrId }]);
+  return { parse_mode: 'HTML', text: lines.join('\n'), disable_web_page_preview: true, reply_markup: { inline_keyboard: kb } };
+}
+
+function lightEmail(c, prefs, to) {
+  const { job, fit } = c;
+  const b = Object.assign({ linkedinSearch: true, statusButtons: true }, (prefs || {}).buttons || {});
+  const score = fit.score === null || fit.score === undefined ? '—' : fit.score;
+  const subject = `${score} · ${job.title} at ${job.company} · from a LinkedIn alert`;
+  const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f5f7fa;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#1a1a1a">
+<div style="max-width:620px;margin:0 auto;padding:20px"><div style="background:#fff;border-radius:12px;padding:20px 22px;border:1px solid #e3e8ef">
+  <div style="font-size:13px;color:#5b6b7f">${escHtml(job.company)}${job.dream ? ' ⭐' : ''} · ${escHtml(shortLoc(job))} · LinkedIn alert</div>
+  <div style="font-size:20px;font-weight:700;margin:4px 0 8px">${escHtml(job.title)}</div>
+  <div style="font-size:15px;margin-bottom:10px"><b style="font-size:22px">${score}</b>/100 <i>(from the title only)</i></div>
+  ${fit.why && fit.why[0] ? `<div style="margin-bottom:12px">✨ ${escHtml(fit.why[0])}</div>` : ''}
+  <div style="font-size:13px;color:#5b6b7f;margin-bottom:12px">This posting isn't on the company's public job board, so nothing is tailored. If you find it on their careers site, paste that link in the JobRadar chat to get tailored files.</div>
+  <div>${btn(job.url, '🔗 Open on LinkedIn', true)}${b.linkedinSearch ? contactLinks(job, fit, null).filter((l) => !l.text.startsWith('👤')).map((l) => btn(l.url, l.text)).join('') : ''}</div>
+  ${b.statusButtons ? `<div style="margin-top:4px">${btn(mailto(to, 'APPLIED', c.jrId, 'applied'), '✅ I applied')}${btn(mailto(to, 'SKIP', c.jrId, 'skipped'), '⏭ Skip')}</div>` : ''}
+</div></div></body></html>`;
+  return { subject, html, text: `${subject}\n\n${job.url}\n` };
+}

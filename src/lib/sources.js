@@ -336,3 +336,112 @@ function preFilter(job, targets, now) {
   if (age !== null && age > fresh) return 'too-old';
   return null;
 }
+
+// ---- LinkedIn job alerts (emails) → leads. We never fetch LinkedIn pages; we only read the alert email. ----
+// A lead: { id, title, company, location, url }. Reads the plain-text part and the HTML part; whichever finds more wins.
+function liNoise(l) {
+  return /^(view job|apply|easy apply|promoted|actively (recruiting|hiring)|be an early applicant|new|\d+ (school )?alumn|\d+ connections?|.*\bconnections? work here|your job alert|see all jobs|manage (job )?alerts|unsubscribe|this email was intended|learn why|help|©|linkedin|jobs? (similar|you may|based on)|top job picks|fast growing|in your network|.*\bapplicants?$|.*\bcompany alumni$|recently posted|\$|€|£)/i.test(l);
+}
+function parseLinkedInAlert(textPlain, textHtml) {
+  const idOf = (u) => (String(u).match(/linkedin\.com\/(?:comm\/)?jobs\/view\/(?:[^\/?#]*?-)?(\d{6,})/i) || [])[1];
+  const clean = (s) => decodeEntities(String(s || '')).replace(/[ ​‌‍﻿]/g, ' ').replace(/[ \t]+/g, ' ').trim();
+  const toLead = (id, lines) => {
+    const ls = lines.map(clean).filter((l) => l && !liNoise(l) && !/^https?:\/\//i.test(l) && !/^[-=_*·•]{3,}$/.test(l));
+    if (!ls.length) return null;
+    let [title, company, location] = ls;
+    // "Acme · Vienna, Austria (Remote)" on one line
+    if (company && / [·•|] /.test(company) && !location) { const p = company.split(/ [·•|] /); company = p[0]; location = p.slice(1).join(' · '); }
+    if (!title || !company) return null;
+    return { id, title: title.slice(0, 160), company: company.slice(0, 120), location: String(location || '').slice(0, 160), url: `https://www.linkedin.com/jobs/view/${id}/` };
+  };
+  const fromText = (t) => {
+    const out = []; const seen = new Set();
+    const lines = String(t || '').split(/\r?\n/);
+    let block = [];
+    for (const raw of lines) {
+      const id = idOf(raw);
+      if (id) {
+        if (!seen.has(id)) { const before = block.filter((l) => clean(l) && !/^view job:?$/i.test(clean(l.replace(/https?:\/\/\S+/g, '')))); const lead = toLead(id, before.slice(-4)); if (lead) { out.push(lead); seen.add(id); } }
+        block = [];
+      } else if (/^\s*[-=_]{5,}\s*$/.test(raw)) block = [];
+      else block.push(raw.replace(/https?:\/\/\S+/g, ''));
+    }
+    return out;
+  };
+  const fromHtml = (h) => {
+    if (!h) return [];
+    // mark each job link, then read the card as lines: the link's own text is the title, the next lines company/location
+    let s = String(h).replace(/<(style|script|head)[\s\S]*?<\/\1>/gi, ' ');
+    s = s.replace(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (m, href, inner) => { const id = idOf(decodeEntities(href)); return id ? `\n@@JOB ${id}@@\n${inner}\n@@END@@\n` : inner; });
+    s = s.replace(/<\s*(br|\/p|\/div|\/td|\/tr|\/li|\/h\d|\/table)\s*\/?>/gi, '\n').replace(/<[^>]+>/g, ' ');
+    const lines = s.split('\n').map(clean).filter(Boolean);
+    const out = []; const seen = new Set();
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].match(/^@@JOB (\d+)@@$/);
+      if (!m || seen.has(m[1])) continue;
+      const inner = []; let j = i + 1;
+      while (j < lines.length && lines[j] !== '@@END@@') inner.push(lines[j++]);
+      const title = inner.filter((l) => !liNoise(l)).join(' ').trim();
+      if (!title) continue; // logo / image link — the text link for the same job comes next
+      const after = [];
+      for (let k = j + 1; k < lines.length && after.length < 4; k++) { if (/^@@(JOB|END)/.test(lines[k])) { if (/^@@JOB/.test(lines[k]) && !lines[k].includes(m[1])) break; continue; } after.push(lines[k]); }
+      const lead = toLead(m[1], [title].concat(after));
+      if (lead) { out.push(lead); seen.add(m[1]); }
+    }
+    return out;
+  };
+  const a = fromText(textPlain), b = fromHtml(textHtml);
+  return b.length > a.length ? b : a;
+}
+
+// A LinkedIn lead as a job of its own: title/company/location only (used when its posting isn't on a public job board)
+function lightJob(lead) {
+  return mk({ uid: 'linkedin:' + lead.id, source: 'linkedin', sourceLabel: 'LinkedIn alert', company: lead.company, title: lead.title,
+    location: lead.location || '', remote: /remote/i.test(lead.location || '') ? true : null, postedAt: null, url: lead.url, applyUrl: lead.url,
+    description: '(Only the title, company and location are known: this came from a LinkedIn job alert and the full posting is not available. Judge fit from those alone; answer "unclear" for location, language and pay unless the title or location make them obvious, and do not mark the role down for missing detail.)',
+    light: true, leadId: lead.id });
+}
+
+// Same posting? Titles compared loosely (punctuation, word order, "Sr." vs "Senior").
+function titleKey(t) {
+  return String(t || '').toLowerCase().replace(/\bsr\b\.?/g, 'senior').replace(/\bjr\b\.?/g, 'junior').replace(/\bmgr\b/g, 'manager').replace(/\(.*?\)/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+function matchLead(lead, jobs) {
+  const want = titleKey(lead.title); const wantFull = String(lead.title || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const toks = (s) => new Set(s.split(' ').filter((w) => w.length > 1));
+  const W = toks(want);
+  let best = null, bestScore = 0;
+  for (const j of jobs) {
+    const have = titleKey(j.title); const haveFull = String(j.title || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    let sc = 0;
+    if (haveFull === wantFull) sc = 3; else if (have === want) sc = 2.5;
+    else { const H = toks(have); const inter = [...W].filter((w) => H.has(w)).length; const jac = inter / (new Set([...W, ...H]).size || 1); if (jac >= 0.75) sc = 1 + jac; }
+    if (sc > bestScore) { best = j; bestScore = sc; }
+  }
+  return best;
+}
+
+// Which job boards to read for a batch of leads: the company's own board when you watch it, a board found earlier,
+// or a guess at its public Ashby / Greenhouse / Lever board (no login, no LinkedIn). Returns { reqs, light } —
+// light = leads with nowhere to look (they become title-only jobs straight away).
+function leadRequests(leads, settings, boards, now, mockBase) {
+  const { companies } = companiesFromSettings(settings);
+  const reqs = []; const light = []; const have = new Set();
+  const add = (r) => { const k = r.source + ':' + r.slug; if (have.has(k)) return; have.add(k); reqs.push(r); };
+  let guessed = 0;
+  for (const l of leads) {
+    const n = normName(l.company);
+    const own = companies.find((c) => normName(c.name) === n);
+    const b = (boards || {})[n];
+    if (own) add({ source: own.ats, company: own.name, slug: own.slug, dream: own.dream, url: atsUrls()[own.ats](own.slug), method: 'GET', lead: true });
+    else if (b && b.ats && now - b.at < 30 * 864e5) add({ source: b.ats, company: l.company, slug: b.slug, url: atsUrls()[b.ats](b.slug), method: 'GET', lead: true });
+    else if (b && b.none && now - b.at < 7 * 864e5) light.push(l);
+    else if (guessed < 8) {
+      guessed++;
+      const slugs = [...new Set([n, slugify(String(l.company).replace(/\b(inc|ltd|llc|gmbh|corp)\b\.?/gi, ''), 60).toLowerCase()])].filter((s) => s && s.length > 1);
+      for (const s of slugs) for (const ats of ['ashby', 'greenhouse', 'lever']) add({ source: ats, company: l.company, slug: s, url: atsUrls()[ats](s), method: 'GET', lead: true, guess: n });
+    } else light.push(l);
+  }
+  if (mockBase) for (const r of reqs) r.url = mockBase + '/src/' + r.source + '/' + encodeURIComponent(r.slug || r.source);
+  return { reqs, light };
+}

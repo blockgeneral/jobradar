@@ -72,3 +72,12 @@ chat() { curl -s -m 120 -X POST -H 'content-type: application/json' -d "{\"sessi
 chat "watch Cool Co as a dream company" chat1.json; chat "yes" chat2.json
 curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:5690/webhook/b7c1a5e0-0c4a-4e1d-9a6b-6a6f62726164/chat" > "$T/chatpage.code" || true
 node "$ROOT/test/e2e-chat-assert.js" "$T"
+
+echo "── LinkedIn alert jobs handed to the radar (as workflow 7 does)"
+curl -s -m 600 -X POST -H 'content-type: application/json' -d '{"leads":[
+ {"id":"9001","title":"Partnerships Manager","company":"LeadCo","location":"Remote, Europe","url":"https://www.linkedin.com/jobs/view/9001/"},
+ {"id":"9002","title":"Account Executive","company":"Mystery Corp","location":"Vienna, Austria","url":"https://www.linkedin.com/jobs/view/9002/"},
+ {"id":"9003","title":"Account Executive, Mid-Market (EMEA)","company":"n8n","location":"Remote","url":"https://www.linkedin.com/jobs/view/9003/"}]}' \
+  "http://127.0.0.1:5690/webhook/jobradar-run" -o /dev/null -w "  webhook jobradar-run {leads} → HTTP %{http_code}\n"
+sleep 2
+node "$ROOT/test/e2e-linkedin-assert.js" "$T"

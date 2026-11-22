@@ -202,11 +202,11 @@ function readStatus(hours) {
   for (const r of rows) {
     if (r.part === 'normalize') for (const [k, v] of Object.entries(r.stats || {})) if (typeof v === 'number') sum[k] = (sum[k] || 0) + v;
     if (r.part === 'health') for (const b of r.problems || []) problems[b.name] = b.problem;
-    if (r.part === 'gate') { sum.screened = (sum.screened || 0) + (r.screened || 0); sum.sent_now = (sum.sent_now || 0) + (r.instant || []).length; sum.daily_list = (sum.daily_list || 0) + (r.digest || []).length; matches.push(...(r.instant || []), ...(r.digest || [])); }
+    if (r.part === 'gate') { sum.screened = (sum.screened || 0) + (r.screened || 0); sum.sent_now = (sum.sent_now || 0) + (r.instant || []).length; sum.daily_list = (sum.daily_list || 0) + (r.digest || []).length; sum.linkedin_title_only = (sum.linkedin_title_only || 0) + (r.light || []).length; matches.push(...(r.instant || []), ...(r.digest || []), ...(r.light || [])); }
   }
   const last = rows.length ? rows[rows.length - 1].at : null;
   return { hours: hours || 24, runs, last_run: last, totals: sum, matches: matches.slice(-10), broken_sources: problems,
-    legend: 'fetched = jobs seen on all sources; seen = already known; repost = dream-company jobs let through again because no card was ever sent for them; the other counts are filter reasons (title, location, language, stale); toScore = sent to the AI screener' };
+    legend: 'fetched = jobs seen on all sources; seen = already known; repost = dream-company jobs let through again because no card was ever sent for them; linkedin / linkedinMatched = jobs from LinkedIn alert emails / how many of them were found on the company’s own job board (the rest get a title-only card); the other counts are filter reasons (title, location, language, stale); toScore = sent to the AI screener' };
 }
 
 async function checkJob(url) {

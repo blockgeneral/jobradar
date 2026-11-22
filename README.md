@@ -108,7 +108,7 @@ Changes apply on the next run. Keys and channels live in `.env` (`./jobradar set
 | Companies without a supported careers page | watched by name across every board below | as fast as the board |
 | We Work Remotely, Remotive, RemoteOK, Jobicy, Himalayas | public feeds | minutes to hours |
 | Hiring Cafe | the community [Hiring Cafe MCP server](https://hiringcafe-mcp.vercel.app/) (unofficial), or an Apify task | hourly |
-| LinkedIn | **not scraped** (it breaks LinkedIn's terms). Reading your own LinkedIn alert *emails* is on the roadmap; until then keep your LinkedIn alerts on. |
+| LinkedIn job alerts (optional, `./jobradar linkedin`) | your own LinkedIn alert **emails**, read from your inbox the moment they arrive (left unread). Each job is looked up on the company's own public job board → full screening + tailored files; if it isn't there, a title-only card links to LinkedIn. LinkedIn pages are **never** opened or scraped. | as often as LinkedIn emails you |
 
 ## How it decides (and why you can trust the drafts)
 
@@ -123,6 +123,7 @@ Changes apply on the next run. Keys and channels live in `.env` (`./jobradar set
 
 ```
 ./jobradar setup        first-time setup (safe to re-run to change anything)
+./jobradar linkedin     also read your LinkedIn job-alert emails (needs an email app password); "linkedin off" to stop
 ./jobradar chat         change anything in plain words (opens the chat page)
 ./jobradar run          check the job boards right now
 ./jobradar companies    add companies (paste career-page links)
@@ -134,7 +135,7 @@ Changes apply on the next run. Keys and channels live in `.env` (`./jobradar set
 ./jobradar start | stop | restart | logs
 ```
 
-Inside n8n (http://localhost:5678) you'll find seven workflows (one is the chat) and two tables: **jobradar_jobs** (your application tracker) and **jobradar_watch** (companies you added with ➕), both viewable and editable there.
+Inside n8n (http://localhost:5678) you'll find eight workflows (one is the chat, one reads LinkedIn alerts if you switch it on) and two tables: **jobradar_jobs** (your application tracker) and **jobradar_watch** (companies you added with ➕), both viewable and editable there.
 
 ## Running 24/7
 

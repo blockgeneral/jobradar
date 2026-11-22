@@ -20,6 +20,7 @@ const SRC = {
       { id: 'n8n-old', title: 'Account Executive, Enterprise', location: 'Remote', isListed: true, isRemote: true, workplaceType: 'Remote', publishedAt: minsAgo(60 * 24 * 12), jobUrl: 'https://jobs.ashbyhq.com/n8n/old', applyUrl: 'https://jobs.ashbyhq.com/n8n/old', descriptionPlain: 'old' },
       { id: 'n8n-de', title: 'Account Executive (German-speaking)', location: 'Berlin', isListed: true, isRemote: false, workplaceType: 'Hybrid', publishedAt: minsAgo(40), jobUrl: 'https://jobs.ashbyhq.com/n8n/de', applyUrl: 'https://jobs.ashbyhq.com/n8n/de', descriptionPlain: 'Fluent German required.' },
     ] },
+    leadco: { jobs: [{ id: 'lc-1', title: 'Partnerships Manager', location: 'Remote - Europe', isListed: true, isRemote: true, workplaceType: 'Remote', publishedAt: minsAgo(60 * 24 * 10), jobUrl: 'https://jobs.ashbyhq.com/leadco/lc-1', applyUrl: 'https://jobs.ashbyhq.com/leadco/lc-1/application', descriptionPlain: 'LeadCo builds data pipelines. Own partner relationships across Europe. Remote, English.' }] },
     supabase: { jobs: [{ id: 'sb-be-1', title: 'Senior Backend Engineer (Go)', location: 'Remote - Europe', isListed: true, isRemote: true, workplaceType: 'Remote', publishedAt: minsAgo(35), jobUrl: 'https://jobs.ashbyhq.com/supabase/sb-be-1', applyUrl: 'https://jobs.ashbyhq.com/supabase/sb-be-1/application', descriptionPlain: 'Build the Postgres platform APIs in Go. Event-driven systems, on-call, remote in Europe, English. Salary EUR 90k-120k.', compensation: { compensationTierSummary: '€90K – €120K' } }] },
   },
   greenhouse: {
@@ -43,7 +44,7 @@ let TG_UPDATES = [];
 function mockScore(user) {
   const t = (user.match(/Title: (.*)/) || [])[1] || '';
   const c = (user.match(/Company: (.*)/) || [])[1] || '';
-  const good = /n8n|Anthropic|CafeCo|Supabase|SafetyWing|PetsApp/.test(c);
+  const good = /n8n|Anthropic|CafeCo|Supabase|SafetyWing|PetsApp|LeadCo|Mystery/.test(c);
   const mid = /DataFlow/.test(c);
   return {
     location_eligible: /Acme/.test(c) ? 'no' : 'yes', location_reason: /Acme/.test(c) ? 'US residents only' : 'Remote EMEA with EOR',

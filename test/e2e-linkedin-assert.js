@@ -1,0 +1,22 @@
+// Checks the LinkedIn lead run at the end of test/e2e.sh.
+const fs = require('fs'); const path = require('path'); const assert = require('assert');
+const T = process.argv[2];
+const ok = (m) => console.log('  ✔ ' + m);
+const msgs = fs.readFileSync(path.join(T, 'mock/telegram_messages.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+const kb = (m) => (m.reply_markup && m.reply_markup.inline_keyboard || []).flat();
+const lead = msgs.filter((m) => /LeadCo/.test(m.text || ''));
+assert(lead.length === 1 && kb(lead[0]).some((b) => /Apply/.test(b.text) && /ashbyhq\.com\/leadco/.test(b.url)), 'LeadCo card ' + JSON.stringify(lead));
+ok('LinkedIn job at an unwatched company found on its own public job board (10 days old) → full card with tailored files');
+const albums = fs.readFileSync(path.join(T, 'mock/telegram_albums.jsonl'), 'utf8');
+assert(/LeadCo/.test(albums), 'LeadCo files');
+const myst = msgs.filter((m) => /Mystery Corp/.test(m.text || ''));
+assert(myst.length === 1 && /from the title only/.test(myst[0].text) && kb(myst[0]).some((b) => b.url === 'https://www.linkedin.com/jobs/view/9002/'), 'title-only card ' + JSON.stringify(myst));
+assert(!/Mystery/.test(albums), 'no files for the title-only card');
+ok('posting on no public board → title-only card linking to LinkedIn, nothing tailored');
+const n8nAe = msgs.filter((m) => /Account Executive, Mid-Market \(EMEA\)/.test(m.text || '') && /n8n/.test(m.text || ''));
+assert.equal(n8nAe.length, 1, 'n8n AE cards: ' + n8nAe.length);
+ok('LinkedIn alert for a job you already got a card for → no second card');
+const status = fs.readFileSync(path.join(T, 'out/.jobradar/status.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+assert(status.some((s) => s.part === 'normalize' && s.stats && s.stats.linkedin === 3), 'lead stats');
+ok('the chat can see LinkedIn numbers ("why so quiet?")');
+console.log('\nLINKEDIN E2E PASSED');

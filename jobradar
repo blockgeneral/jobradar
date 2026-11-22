@@ -20,7 +20,7 @@ asks() { local p="$1" v; read -r -s -p "  $p: " v; echo >&2; printf "%s" "$v"; }
 yes()  { local v; read -r -p "  $1 [${2:-y}/$( [ "${2:-y}" = y ] && echo n || echo y)]: " v; v="${v:-${2:-y}}"; [ "$v" = y ] || [ "$v" = Y ]; }
 
 WF_SEND=JobRadarSend0001; WF_RADAR=JobRadarMain0001; WF_BUTTONS=JobRadarActn0001
-WF_MAIL=JobRadarMail0001; WF_REPLIES=JobRadarRepl0001; WF_REPORTS=JobRadarRprt0001; WF_CHAT=JobRadarChat0001
+WF_MAIL=JobRadarMail0001; WF_REPLIES=JobRadarRepl0001; WF_REPORTS=JobRadarRprt0001; WF_CHAT=JobRadarChat0001; WF_LINKEDIN=JobRadarLnkd0001
 CHAT_URL=http://localhost:5678/webhook/b7c1a5e0-0c4a-4e1d-9a6b-6a6f62726164/chat
 HOOK="${JOBRADAR_HOOK:-http://127.0.0.1:5678/webhook}"
 API_ANTHROPIC="${ANTHROPIC_BASE_URL:-https://api.anthropic.com}"; API_TG="${TELEGRAM_API_BASE:-https://api.telegram.org}"
@@ -64,7 +64,8 @@ deploy_workflows() {
   has_channel telegram && ids="$ids $WF_BUTTONS"
   has_channel email && ids="$ids $WF_MAIL"
   [ "$(node_in -e 'try{console.log(require("/home/node/jobradar/settings.json").replyDetection.enabled?1:0)}catch(e){console.log(0)}')" = 1 ] && has_channel email && ids="$ids $WF_REPLIES"
-  for id in $WF_SEND $WF_RADAR $WF_BUTTONS $WF_MAIL $WF_REPLIES $WF_REPORTS $WF_CHAT; do n8n_cli unpublish:workflow --id=$id >/dev/null; done
+  [ "$(env_get LINKEDIN_ALERTS)" = on ] && ids="$ids $WF_LINKEDIN"
+  for id in $WF_SEND $WF_RADAR $WF_BUTTONS $WF_MAIL $WF_REPLIES $WF_REPORTS $WF_CHAT $WF_LINKEDIN; do n8n_cli unpublish:workflow --id=$id >/dev/null; done
   n8n_cli import:workflow --separate --input=/home/node/jobradar/workflows >/dev/null
   for id in $ids; do n8n_cli publish:workflow --id=$id >/dev/null; done
   ok "workflows installed and switched on ($(echo $ids | wc -w | tr -d ' '))"
@@ -293,11 +294,42 @@ cmd_chat()     {
   elif [ "$IS_WSL" = 1 ] && command -v cmd.exe >/dev/null 2>&1; then cmd.exe /c start "" "$CHAT_URL" >/dev/null 2>&1 || true
   elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$CHAT_URL" >/dev/null 2>&1 || true; fi
 }
+cmd_linkedin() {
+  need_docker
+  say "${B}LinkedIn job alerts → JobRadar${N}  ${D}JobRadar reads LinkedIn's alert emails in your inbox (read-only, left unread) and checks each job.${N}"
+  if [ "${1:-}" = off ]; then env_set LINKEDIN_ALERTS off; dc stop n8n >/dev/null 2>&1 || true; deploy_workflows; dc up -d >/dev/null; wait_up && ok "LinkedIn alerts switched off"; return; fi
+  local addr pw host port
+  addr="$(env_get IMAP_USER)"; [ -n "$addr" ] || addr="$(env_get SMTP_USER)"
+  pw="$(env_get IMAP_PASS)"; [ -n "$pw" ] || pw="$(env_get SMTP_PASS)"
+  if [ -z "$addr" ] || [ -z "$pw" ] || ! yes "Use the mailbox already saved ($addr)?"; then
+    addr="$(ask 'The email address your LinkedIn alerts go to' "$addr")"
+    case "$addr" in
+      *@gmail.com|*@googlemail.com) env_set IMAP_HOST imap.gmail.com; env_set IMAP_PORT 993
+        say "  ${D}Gmail needs an app password: myaccount.google.com/apppasswords (2-step verification must be on). Name it JobRadar.${N}";;
+      *@outlook.com|*@hotmail.com|*@live.com) env_set IMAP_HOST outlook.office365.com; env_set IMAP_PORT 993;;
+      *@icloud.com|*@me.com) env_set IMAP_HOST imap.mail.me.com; env_set IMAP_PORT 993
+        say "  ${D}iCloud: create an app-specific password at account.apple.com.${N}";;
+      *) env_set IMAP_HOST "$(ask 'IMAP server' "$(env_get IMAP_HOST)")"; env_set IMAP_PORT "$(ask 'IMAP port' 993)";;
+    esac
+    pw="$(asks 'App password')"; pw="$(printf "%s" "$pw" | tr -d ' ')"
+  fi
+  host="$(env_get IMAP_HOST)"; port="$(env_get IMAP_PORT)"
+  if curl -s -m 25 --url "imaps://${host:-imap.gmail.com}:${port:-993}/INBOX" --user "$addr:$pw" -X 'STATUS INBOX (MESSAGES)' -o /dev/null; then ok "signed in to $addr"
+  else die "Couldn't sign in to $addr. Check the app password (not your normal password) and run ./jobradar linkedin again."; fi
+  env_set IMAP_USER "$addr"; env_set IMAP_PASS "$pw"; env_set LINKEDIN_ALERTS on
+  dc stop n8n >/dev/null 2>&1 || true; deploy_workflows; dc up -d >/dev/null; wait_up || die "n8n didn't start. Run ./jobradar logs to see why."
+  ok "LinkedIn alerts are on — new alert emails are checked the moment they arrive"
+  say ""
+  say "  ${B}Last step, on LinkedIn:${N} search Jobs for each dream company (and your main role, e.g. \"account executive\" remote),"
+  say "  switch on ${B}Set alert${N}, and keep email notifications on. Alerts already set up need nothing."
+  say "  ${D}Turn it off any time: ./jobradar linkedin off${N}"
+}
 cmd_import()   { need_docker; [ -f settings.json ] || cp settings.example.json settings.json; import_cv; }
 cmd_help() { cat <<EOF
 ${B}JobRadar${N} — finds jobs minutes after they're posted, tailors your files, notifies you. You apply.
 
   ./jobradar setup        first-time setup (safe to re-run to change anything)
+  ./jobradar linkedin     read your LinkedIn job alerts too (needs an email app password); "linkedin off" to stop
   ./jobradar run          check the job boards right now
   ./jobradar chat         change anything in plain words (opens the chat page)
   ./jobradar companies    add companies to watch (paste career-page links)
@@ -314,6 +346,6 @@ EOF
 
 case "${1:-help}" in
   setup) cmd_setup;; run) cmd_run;; report) shift; cmd_report "$@";; start) cmd_start;; stop) cmd_stop;; restart) cmd_restart;;
-  logs) shift; cmd_logs "$@";; status) cmd_status;; update) shift; cmd_update "$@";; rerender) shift; cmd_rerender "$@";; companies) cmd_companies;; chat) cmd_chat;; import-cv) cmd_import;;
+  logs) shift; cmd_logs "$@";; linkedin) shift; cmd_linkedin "$@";; status) cmd_status;; update) shift; cmd_update "$@";; rerender) shift; cmd_rerender "$@";; companies) cmd_companies;; chat) cmd_chat;; import-cv) cmd_import;;
   *) cmd_help;;
 esac

@@ -10,6 +10,7 @@
  IMAP       │ 4 Reply detection (opt-in): inbox mail about applied companies → Claude│
  hourly     │ 5 Reports & digest: weekly / monthly / daily digest per settings       │
  you        │ 6 Chat (sign-in protected page) → renderer /chat → reply              │
+ your inbox │ 7 LinkedIn alerts (IMAP) → jobs in the email → 1 Radar (lead mode)     │
             │ 9 Send: Telegram message · Telegram album · email (SMTP)               │
             │ table jobradar_jobs: one row per match (status, timestamps, outcome)   │
             └───────────────────────────────────────────────────────────────────────┘
@@ -30,6 +31,7 @@
 - *Truth checks in code, not prompts*: every number in a tailored resume must exist in the candidate's files; never-claim patterns; required sections; unchanged contact line. Cover letters are assembled in code — the AI only fills three slots.
 - *No public URL needed*: Telegram buttons are polled with `getUpdates`; email buttons are `mailto:` commands read over IMAP.
 - *Settings over workflow edits*: users change `settings.json` and `candidate/`; workflows read them on every run, so updates never overwrite personal config.
+- *LinkedIn without scraping*: workflow 7 reads LinkedIn's alert emails (IMAP, read-only) and posts the jobs to the radar's webhook as `{leads}`. The radar looks each one up on the company's own board (watched board, a board found before, or a guessed public Ashby/Greenhouse/Lever slug), screens the full posting, and falls back to a title-only card. Dedupe is against jobs that actually got a card (tracker rows with files, or source `linkedin`).
 - *State*: the tracker is an n8n Data Table (survives updates, editable in the UI); per-workflow static data only caches "seen" job IDs.
 - *Chat edits are staged, consent is checked in code*: Claude in the chat can only stage changes (text replace, facts, settings paths, companies). The helper shows before → after and writes only after the user's own latest message says yes; a bare "yes"/"no" is handled without the model. n8n keeps a read-only mount; the helper is the single writer and keeps a .bak.
 - *Run status for "why so quiet?"*: each radar run posts its numbers (filter reasons, screened, sent, broken sources) to the helper (`output/.jobradar/status.jsonl`); the chat reads them.

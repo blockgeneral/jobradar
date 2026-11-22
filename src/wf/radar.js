@@ -14,10 +14,24 @@ let settings;
 try { settings = JSON.parse(files['settings.json']); } catch (e) { throw new Error('settings.json is not valid JSON: ' + e.message); }
 const env = { APIFY_TOKEN: envGet('APIFY_TOKEN'), MOCK: envGet('JOBRADAR_MOCK_BASE') };
 let manualUrl = '';
-try { const b = $('🔗 Run from CLI').first().json.body || {}; manualUrl = typeof b.url === 'string' ? b.url.trim() : ''; } catch (e) { /* not started from the webhook */ }
-const reqs = manualUrl ? manualRequests(manualUrl, env.MOCK || '') : buildRequests(settings, env, Date.now(), env.MOCK || '');
+let leads = null;
+try {
+  const b = $('🔗 Run from CLI').first().json.body || {};
+  manualUrl = typeof b.url === 'string' ? b.url.trim() : '';
+  if (Array.isArray(b.leads)) leads = b.leads.filter((l) => l && l.id && l.title && l.company).slice(0, 60);
+} catch (e) { /* not started from the webhook */ }
+let reqs;
+if (leads) {
+  // LinkedIn alert jobs: skip the ones already handled, and the ones your title/location filters drop anyway
+  const state = $getWorkflowStaticData('global');
+  const watched = watchList(settings, []);
+  leads = leads.filter((l, i, a) => a.findIndex((x) => x.id === l.id) === i && !(state.seen || {})['linkedin:' + l.id]);
+  leads = leads.filter((l) => { const w = watched[normName(l.company)]; return !preFilter({ title: l.title, description: '', location: l.location || '', dream: !!(w && w.dream), postedAt: null }, settings, Date.now()); });
+  reqs = leadRequests(leads, settings, state.leadBoards, Date.now(), env.MOCK || '').reqs;
+} else reqs = manualUrl ? manualRequests(manualUrl, env.MOCK || '') : buildRequests(settings, env, Date.now(), env.MOCK || '');
 const { invalid } = companiesFromSettings(settings);
-const candidate = { files, settings, invalidCompanies: invalid, manualUrl };
+const candidate = { files, settings, invalidCompanies: invalid, manualUrl, leads };
+if (leads && !leads.length) return [];
 if (!reqs.length) return [{ json: { url: 'about:blank', source: 'none', _candidate: candidate } }];
 return reqs.map((r, i) => ({ json: i === 0 ? Object.assign({}, r, { _candidate: candidate }) : r }));
 
@@ -29,14 +43,14 @@ const state = $getWorkflowStaticData('global');
 state.health = state.health || {};
 const now = Date.now();
 const bad = [];
-const invalid = plan[0].json._candidate.invalidCompanies || [];
+const invalid = plan[0].json._candidate.leads ? [] : (plan[0].json._candidate.invalidCompanies || []);
 for (const u of invalid) {
   const key = 'url:' + u;
   if (!state.health[key] || now - state.health[key] > 864e5) { bad.push({ name: u, problem: "can't tell which job board this careers link uses — paste the link of the page that lists the jobs" }); state.health[key] = now; }
 }
 for (let i = 0; i < resp.length; i++) {
   const req = plan[i] && plan[i].json;
-  if (!req || req.source === 'none' || req.manualUrl) continue; // a pasted link isn't a source to monitor
+  if (!req || req.source === 'none' || req.manualUrl || req.lead) continue; // a pasted link / LinkedIn lead lookup isn't a source to monitor
   const r = resp[i].json;
   let problem = null;
   if (r.error) problem = (r.error.message || JSON.stringify(r.error)).slice(0, 140);
@@ -83,27 +97,49 @@ const now = Date.now();
 const state = $getWorkflowStaticData('global');
 state.seen = state.seen || {};
 const known = new Set();
-const carded = new Set(); // jobs that actually went out as a card (tailored files exist)
+const carded = new Set(); // jobs that actually went out as a card (tailored files, or a LinkedIn title-only card)
 for (const r of tracked) {
   known.add(r.uid); if (r.alt_key) known.add('alt:' + r.alt_key);
-  if (r.folder) { carded.add(r.uid); if (r.alt_key) carded.add('alt:' + r.alt_key); }
+  if (r.folder || r.source === 'linkedin') { carded.add(r.uid); if (r.alt_key) carded.add('alt:' + r.alt_key); }
 }
-// Dream companies: a job is "done" once it was screened or filtered for a reason other than its age.
-// Everything seen before this rule existed (or on the very first run) counts as done — no burst of old roles.
-state.dreamDone = state.dreamDone || {};
-if (state.dreamDoneBefore == null) state.dreamDoneBefore = now;
-const dreamDone = (j) => !!state.dreamDone[j.uid] || (state.seen[j.uid] != null && state.seen[j.uid] <= state.dreamDoneBefore);
+// A job is "judged" once it was screened or filtered for a reason other than its age. Dream-company reposts and
+// LinkedIn leads come through again unless judged or carded. Everything seen before this rule existed (or on the
+// very first run) counts as judged — no burst of old roles.
+state.judged = state.judged || state.dreamDone || {};
+if (state.judgedBefore == null) state.judgedBefore = state.dreamDoneBefore != null ? state.dreamDoneBefore : now;
+delete state.dreamDone; delete state.dreamDoneBefore;
+const judged = (j) => !!state.judged[j.uid] || (state.seen[j.uid] != null && state.seen[j.uid] <= state.judgedBefore);
+const leads = plan[0].json._candidate.leads;
 const firstInstall = !state.initialized && tracked.length === 0;
 const f = settings.filters || {};
 const sc = settings.scoring || {};
 const freshH = firstInstall ? 24 * ((settings.preview && settings.preview.days) || 7) : (f.freshHours || 72);
 
 let jobs = [];
+state.leadBoards = state.leadBoards || {};
+const guessed = {};
 for (let i = 0; i < fetched.length; i++) {
   const req = plan[i] ? plan[i].json : null;
   const r = fetched[i].json;
-  if (!req || r.error || req.source === 'none') continue;
-  try { jobs = jobs.concat(normalize(req, r.data)); } catch (e) { /* malformed payload — reported by 🩺 */ }
+  if (!req || req.source === 'none') continue;
+  if (req.guess) guessed[req.guess] = guessed[req.guess] || false;
+  if (r.error) continue;
+  try {
+    const got = normalize(req, r.data);
+    if (req.guess && got.length) { guessed[req.guess] = true; state.leadBoards[req.guess] = { ats: req.source, slug: req.slug, at: now }; }
+    jobs = jobs.concat(got);
+  } catch (e) { /* malformed payload — reported by 🩺 */ }
+}
+if (leads) {
+  // each LinkedIn lead → its posting on the company's own job board (full description), else a title-only job
+  for (const [n, found] of Object.entries(guessed)) if (!found) state.leadBoards[n] = { none: true, at: now };
+  const out = [];
+  for (const l of leads) {
+    const n = normName(l.company);
+    const hit = matchLead(l, jobs.filter((j) => normName(j.company) === n));
+    out.push(hit ? Object.assign(hit, { viaLinkedIn: true, leadId: l.id, sourceLabel: hit.sourceLabel + ' · via LinkedIn alert' }) : lightJob(l));
+  }
+  jobs = out;
 }
 const manualUrl = plan[0].json._candidate.manualUrl;
 if (manualUrl) {
@@ -113,20 +149,22 @@ if (manualUrl) {
 }
 for (const j of jobs) { const w = watched[normName(j.company)]; if (w) { j.watched = true; if (w.dream) j.dream = true; } }
 const stats = { fetched: jobs.length };
+if (leads) { stats.linkedin = leads.length; stats.linkedinMatched = jobs.filter((j) => j.viaLinkedIn).length; }
 const passed = [];
 const batch = new Set();
-const mark = (j) => { state.seen[j.uid] = now; state.seen['alt:' + j.altKey] = now; };
+const mark = (j) => { state.seen[j.uid] = now; state.seen['alt:' + j.altKey] = now; if (j.leadId) state.seen['linkedin:' + j.leadId] = now; };
+const noAge = Object.assign({}, settings, { filters: Object.assign({}, f, { freshHours: Infinity }) });
 for (const j of jobs) {
   if (batch.has(j.uid) || batch.has('alt:' + j.altKey)) { stats.duplicate = (stats.duplicate || 0) + 1; continue; }
   batch.add(j.uid); batch.add('alt:' + j.altKey);
   if (j.manual) { passed.push(j); continue; } // you asked for this one: no dedupe, no filters
-  if (j.dream && state.initialized) {
-    // Reposts: a dream-company role you never got a card for comes through again, whatever its date says
-    // (a repost often keeps the old date, or a new ID with the same title).
-    if (carded.has(j.uid) || carded.has('alt:' + j.altKey) || dreamDone(j)) { stats.seen = (stats.seen || 0) + 1; continue; }
+  if (leads || (j.dream && state.initialized)) {
+    // Reposts + LinkedIn alerts: a role you never got a card for comes through again, whatever its date says
+    // (a repost often keeps the old date, or a new ID with the same title). Each one is screened once.
+    if (carded.has(j.uid) || carded.has('alt:' + j.altKey) || judged(j)) { state.judged[j.uid] = state.judged[j.uid] || now; mark(j); stats.seen = (stats.seen || 0) + 1; continue; }
     const repost = known.has(j.uid) || known.has('alt:' + j.altKey) || state.seen[j.uid] || state.seen['alt:' + j.altKey];
-    const why = preFilter(j, Object.assign({}, settings, { filters: Object.assign({}, f, { freshHours: Infinity }) }), now);
-    if (why) { stats[why] = (stats[why] || 0) + 1; mark(j); state.dreamDone[j.uid] = now; continue; }
+    const why = preFilter(j, noAge, now);
+    if (why) { stats[why] = (stats[why] || 0) + 1; mark(j); state.judged[j.uid] = now; continue; }
     if (repost) stats.repost = (stats.repost || 0) + 1;
     passed.push(j); continue;
   }
@@ -135,22 +173,22 @@ for (const j of jobs) {
   // never flood: on the very first run only recent jobs (or undated ones at dream companies) go through
   if (!state.initialized && (age === null ? !j.dream : age > freshH)) { mark(j); stats.seeded = (stats.seeded || 0) + 1; continue; }
   const reason = preFilter(j, Object.assign({}, settings, { filters: Object.assign({}, f, { freshHours: freshH }) }), now);
-  if (reason) { stats[reason] = (stats[reason] || 0) + 1; mark(j); continue; }
+  if (reason) { stats[reason] = (stats[reason] || 0) + 1; mark(j); if (reason !== 'too-old') state.judged[j.uid] = now; continue; }
   passed.push(j);
 }
 passed.sort((a, b) => (b.dream - a.dream) || ((b.postedAt || '').localeCompare(a.postedAt || '')));
-const cap = sc.maxScoredPerRun || 40;
+const cap = Math.max(sc.maxScoredPerRun || 40, leads ? leads.length : 0); // a LinkedIn batch is screened in one go
 const toScore = passed.slice(0, cap);
-toScore.forEach((j) => { mark(j); if (j.dream) state.dreamDone[j.uid] = now; });
+toScore.forEach((j) => { mark(j); state.judged[j.uid] = now; });
 stats.toScore = toScore.length; stats.deferred = passed.length - toScore.length;
 for (const k of Object.keys(state.seen)) if (now - state.seen[k] > 90 * 864e5) delete state.seen[k];
-for (const k of Object.keys(state.dreamDone)) if (now - state.dreamDone[k] > 90 * 864e5) delete state.dreamDone[k];
-state.initialized = true;
-state.lastRun = { at: new Date(now).toISOString(), stats, firstInstall };
+for (const k of Object.keys(state.judged)) if (now - state.judged[k] > 90 * 864e5) delete state.judged[k];
+if (!leads) state.initialized = true;
+if (!leads) state.lastRun = { at: new Date(now).toISOString(), stats, firstInstall };
 if (!manualUrl) await postStatus(this.helpers, 'normalize', { run: $execution.id, stats });
 
 const model = envGet('SCORING_MODEL') || 'claude-haiku-5-5';
-return toScore.map((j) => ({ json: { job: j, preview: firstInstall, scoreRequest: scoreRequest(j, files['search_profile.md'], files['resume_base.md'], model) } }));
+return toScore.map((j) => ({ json: { job: j, preview: firstInstall && !leads, scoreRequest: scoreRequest(j, files['search_profile.md'], files['resume_base.md'], model) } }));
 
 //@node gate
 // 🎯 Gate — skills ≥ min AND values ≥ min appear; strong matches + dream companies get tailored now, the rest go to the daily "worth a look" list
@@ -163,7 +201,7 @@ const instantAt = sc.instantAt != null ? sc.instantAt : 75;
 const resp = $input.all();
 const state = $getWorkflowStaticData('global');
 const model = envGet('TAILORING_MODEL') || 'claude-sonnet-5-5';
-const instant = [], digest = [];
+const instant = [], digest = [], light = [];
 let preview = false;
 let manualResult = null;
 for (let i = 0; i < resp.length; i++) {
@@ -174,7 +212,7 @@ for (let i = 0; i < resp.length; i++) {
   const r = resp[i].json;
   const fit = r.error ? null : toolInput(r);
   if (!fit) {
-    instant.push({ job, scoreError: true, fit: { score: null, skills_fit: null, values_fit: null, why: [], gaps: [], red_flags: [], keywords: [], values_match: [], role_family: '', seniority_fit: '', location_eligible: 'unclear', english_only: 'unclear', comp_meets_floor: 'unknown' },
+    (job.light ? light : instant).push({ job, scoreError: true, fit: { score: null, skills_fit: null, values_fit: null, why: [], gaps: [], red_flags: [], keywords: [], values_match: [], role_family: '', seniority_fit: '', location_eligible: 'unclear', english_only: 'unclear', comp_meets_floor: 'unknown' },
       warnings: ['Not screened — Claude call failed (' + String((r.error && (r.error.message || r.error)) || 'no output').slice(0, 90) + ')'] });
     continue;
   }
@@ -203,18 +241,25 @@ for (let i = 0; i < resp.length; i++) {
     instant.push({ job, fit, warnings: lockWarn.concat(why.length ? ['You asked for this one — normally skipped: ' + why.join('; ')] : []) });
     continue;
   }
+  if (job.light) { // LinkedIn alert, posting not on a public job board: title-only card, nothing tailored
+    if (hardNo || (low && !job.dream)) continue;
+    light.push({ job, fit, warnings: lockWarn });
+    continue;
+  }
   if (hardNo || low) continue;
   (job.dream || fit.score >= instantAt ? instant : digest).push({ job, fit, warnings: lockWarn });
 }
 instant.sort((a, b) => (b.job.dream - a.job.dream) || ((b.fit.score || 0) - (a.fit.score || 0)));
 const brief = (m) => ({ company: m.job.company, title: m.job.title, score: m.fit.score, url: m.job.applyUrl || m.job.url });
-await postStatus(this.helpers, 'gate', { run: $execution.id, screened: resp.length, instant: instant.map(brief), digest: digest.map(brief),
+await postStatus(this.helpers, 'gate', { run: $execution.id, screened: resp.length, instant: instant.map(brief), digest: digest.map(brief), light: light.map(brief),
   manualUrl: $('⚙️ Plan run').first().json._candidate.manualUrl || undefined, manual: manualResult || undefined });
-const cap = preview ? ((settings.preview && settings.preview.count) || 3) : (sc.maxTailoredPerRun || 4);
-for (const m of instant.slice(cap)) { delete state.seen[m.job.uid]; delete state.seen['alt:' + m.job.altKey]; if (state.dreamDone) delete state.dreamDone[m.job.uid]; } // over the cap: picked up next run
+const fromLeads = !!$('⚙️ Plan run').first().json._candidate.leads; // a LinkedIn batch has no "next run" to wait for
+const cap = preview ? ((settings.preview && settings.preview.count) || 3) : fromLeads ? Math.max(sc.maxTailoredPerRun || 4, instant.length) : (sc.maxTailoredPerRun || 4);
+for (const m of instant.slice(cap)) { delete state.seen[m.job.uid]; delete state.seen['alt:' + m.job.altKey]; if (state.judged) delete state.judged[m.job.uid]; } // over the cap: picked up next run
 return instant.slice(0, cap).map((m) => ({ json: Object.assign(m, { tier: 'instant', preview,
   tailorRequest: tailorRequest(m.job, m.fit, files['resume_base.md'], files['cover_letter_base.md'], files['search_profile.md'], files['experience_inventory.md'], model) }) }))
-  .concat(digest.map((m) => ({ json: Object.assign(m, { tier: 'digest' }) })));
+  .concat(digest.map((m) => ({ json: Object.assign(m, { tier: 'digest' }) })))
+  .concat(light.map((m) => ({ json: Object.assign(m, { tier: 'light', jrId: 'JR-' + shortHash(m.job.uid) }) })));
 
 //@node digest_rows
 // 📝 "Worth a look" rows — listed in tomorrow's daily summary, not tailored
@@ -348,3 +393,22 @@ const now = new Date().toISOString();
 return $('🛡️ Guardrails & compose').all().map(({ json: c }) => ({ json: Object.assign(trackerRow(c.job, c.fit, {
   status: digest ? 'digest_pending' : 'notified', notified_at: now, folder: c.folder, channel: channelsEnabled().join(','),
 }), { jr_id: c.jrId }) }));
+
+//@node light_cards
+// 🔎 LinkedIn title-only cards — the posting isn't on a public job board, so nothing is tailored; open it on LinkedIn
+const { settings } = $('⚙️ Plan run').first().json._candidate;
+const n = settings.notifications || {};
+const quiet = inQuietHours(n.quietHours, envGet('GENERIC_TIMEZONE'), Date.now());
+const channels = channelsEnabled();
+const to = envGet('NOTIFY_EMAIL_TO') || envGet('SMTP_USER') || '';
+const out = [];
+for (const { json: c } of $input.all()) {
+  if (channels.includes('telegram')) { const card = lightCard(c, n); if (quiet) card.disable_notification = true; out.push({ json: { kind: 'tg_text', jrId: c.jrId, tg: card } }); }
+  if (channels.includes('email')) { const e = lightEmail(c, n, to); out.push({ json: { kind: 'email', jrId: c.jrId, subject: e.subject, html: e.html, text: e.text, attach: '' } }); }
+}
+return out;
+
+//@node light_rows
+// 📝 Tracker rows for the LinkedIn title-only cards (so ✅ Applied / ⏭ Skip and the reports work)
+const now = new Date().toISOString();
+return $input.all().map(({ json: c }) => ({ json: Object.assign(trackerRow(c.job, c.fit, { status: 'notified', notified_at: now, folder: '', channel: channelsEnabled().join(',') }), { jr_id: c.jrId }) }));

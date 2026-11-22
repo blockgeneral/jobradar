@@ -3,7 +3,7 @@
 const fs = require('fs'); const path = require('path'); const assert = require('assert');
 const ROOT = path.join(__dirname, '..');
 const libSrc = ['util', 'sources', 'prompts', 'guard', 'notify'].map((n) => fs.readFileSync(path.join(ROOT, 'src/lib', n + '.js'), 'utf8')).join('\n');
-const L = new Function('$env', libSrc + '; return { normalize, watchList, normName, preFilter, checkTailoring, keywordCoverage, toIso, detectAts, companiesFromSettings, buildRequests, parseBody, telegramCard, emailForJob, computeReport, telegramReport, inQuietHours, shortHash, fillCoverLetter, countryLock, claimCheck, contactLinks, resumeDiff, changesDoc, manualRequests, pickManual };')({ NOTIFY_CHANNELS: 'telegram,email' });
+const L = new Function('$env', libSrc + '; return { normalize, watchList, normName, preFilter, checkTailoring, keywordCoverage, toIso, detectAts, companiesFromSettings, buildRequests, parseBody, telegramCard, emailForJob, computeReport, telegramReport, inQuietHours, shortHash, fillCoverLetter, countryLock, claimCheck, contactLinks, resumeDiff, changesDoc, manualRequests, pickManual, parseLinkedInAlert, matchLead, lightJob, leadRequests, lightCard };')({ NOTIFY_CHANNELS: 'telegram,email' });
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('  ✔ ' + name); };
 const now = Date.now();
 
@@ -266,11 +266,11 @@ async function runNode(code, { input = [], nodes = {}, env = {}, state = {} }) {
   const lever = (id, title, ageDays) => ({ data: JSON.stringify([{ id, text: title, categories: { allLocations: ['Remote EU'] }, createdAt: now - ageDays * D, hostedUrl: 'https://jobs.lever.co/x/' + id, applyUrl: 'a', workplaceType: 'remote', descriptionPlain: 'Sell software' }]) });
   const run = (slug, company, dream, job, tracked, state) => runNode(RAD.normalize, { input: [], state,
     nodes: { '⚙️ Plan run': [plan(slug, company, dream)], '🌐 Fetch job sources': [job], '🗃️ Already sent': tracked } });
-  const old = () => ({ initialized: true, dreamDoneBefore: now - 30 * D, seen: { 'lever:acme:old': now - 5 * D, 'alt:acme|account executive': now - 5 * D }, dreamDone: { 'lever:acme:old': now - 5 * D } });
+  const old = () => ({ initialized: true, judgedBefore: now - 30 * D, seen: { 'lever:acme:old': now - 5 * D, 'alt:acme|account executive': now - 5 * D }, judged: { 'lever:acme:old': now - 5 * D } });
 
   let st = old();
   let out = await run('acme', 'Acme', true, lever('new', 'Account Executive', 10), [], st);
-  t('🔁 dream repost (new ID, same title, old date) is screened again', () => { assert.equal(out.length, 1); assert.equal(st.lastRun.stats.repost, 1); assert.ok(st.dreamDone['lever:acme:new']); });
+  t('🔁 dream repost (new ID, same title, old date) is screened again', () => { assert.equal(out.length, 1); assert.equal(st.lastRun.stats.repost, 1); assert.ok(st.judged['lever:acme:new']); });
   out = await run('acme', 'Acme', true, lever('new', 'Account Executive', 10), [], st);
   t('🔁 …but only once', () => assert.equal(out.length, 0));
   st = old();
@@ -281,7 +281,7 @@ async function runNode(code, { input = [], nodes = {}, env = {}, state = {} }) {
   t('🔁 same dream job already screened is not re-screened', () => assert.equal(out.length, 0));
   st = { initialized: true, seen: { 'lever:acme:legacy': now - 5 * D } };
   out = await run('acme', 'Acme', true, lever('legacy', 'Account Executive', 10), [], st);
-  t('🔁 jobs seen before the update don\'t come back in a burst', () => { assert.equal(out.length, 0); assert.ok(st.dreamDoneBefore); });
+  t('🔁 jobs seen before the update don\'t come back in a burst', () => { assert.equal(out.length, 0); assert.ok(st.judgedBefore); });
   st = { initialized: true, seen: { 'lever:acme:legacy': now - 5 * D } };
   out = await run('acme', 'Acme', true, lever('fresh', 'Account Executive', 12), [], st);
   t('🔁 a new dream job with an old date gets through', () => assert.equal(out.length, 1));
@@ -293,7 +293,114 @@ async function runNode(code, { input = [], nodes = {}, env = {}, state = {} }) {
   t('🔁 other companies: old dates are still filtered', () => { assert.equal(out.length, 0); assert.equal(st.lastRun.stats['too-old'], 1); });
   st = { initialized: true, seen: {} };
   out = await run('acme', 'Acme', true, lever('eng', 'Software Engineer', 1), [], st);
-  t('🔁 dream jobs still respect title filters (and stay filtered)', () => { assert.equal(out.length, 0); assert.ok(st.dreamDone['lever:acme:eng']); });
+  t('🔁 dream jobs still respect title filters (and stay filtered)', () => { assert.equal(out.length, 0); assert.ok(st.judged['lever:acme:eng']); });
+}
+
+// 💼 LinkedIn job alerts
+{
+  const TXT = `Your job alert for account executive in European Union
+New jobs match your preferences.
+
+Account Executive, Mid-Market
+n8n
+Berlin, Germany (Remote)
+View job: https://www.linkedin.com/comm/jobs/view/4012345678/?trackingId=abc%3D&refId=x
+
+---------------------------------------------------------
+
+Senior Account Executive
+Cool Co
+Vienna, Austria
+Actively recruiting
+View job: https://www.linkedin.com/comm/jobs/view/4099999999/?trackingId=def
+
+---------------------------------------------------------
+
+See all jobs: https://www.linkedin.com/comm/jobs/search?keywords=account
+Unsubscribe: https://www.linkedin.com/comm/psettings/email-unsubscribe?x`;
+  const HTML = `<html><head><style>.x{}</style></head><body><table>
+<tr><td><a href="https://www.linkedin.com/comm/jobs/view/4012345678/?trackingId=abc&amp;refId=x"><img src="logo.png" alt="n8n"></a></td>
+<td><a href="https://www.linkedin.com/comm/jobs/view/4012345678/?trackingId=abc&amp;refId=x" style="color:#0a66c2">Account Executive, Mid-Market</a>
+<p>n8n · Berlin, Germany (Remote)</p><p>Promoted</p></td></tr>
+<tr><td><a href="https://www.linkedin.com/comm/jobs/view/4099999999/?trackingId=def">Senior Account Executive</a><p>Cool Co · Vienna, Austria</p><p>3 connections</p></td></tr>
+<tr><td><a href="https://www.linkedin.com/comm/jobs/search?keywords=account">See all jobs</a></td></tr></table></body></html>`;
+  t('💼 alert email (plain text) → leads', () => {
+    const l = L.parseLinkedInAlert(TXT, '');
+    assert.equal(l.length, 2, JSON.stringify(l));
+    assert.deepEqual(l[0], { id: '4012345678', title: 'Account Executive, Mid-Market', company: 'n8n', location: 'Berlin, Germany (Remote)', url: 'https://www.linkedin.com/jobs/view/4012345678/' });
+    assert.equal(l[1].company, 'Cool Co'); assert.equal(l[1].location, 'Vienna, Austria');
+  });
+  t('💼 alert email (HTML only) → same leads, logos and noise skipped', () => {
+    const l = L.parseLinkedInAlert('', HTML);
+    assert.equal(l.length, 2, JSON.stringify(l));
+    assert.equal(l[0].title, 'Account Executive, Mid-Market'); assert.equal(l[0].company, 'n8n'); assert.equal(l[0].location, 'Berlin, Germany (Remote)');
+    assert.equal(l[1].title, 'Senior Account Executive'); assert.equal(l[1].company, 'Cool Co');
+  });
+  t('💼 lead ↔ board posting: loose title match, no false match', () => {
+    const jobs = [{ title: 'Sr. Account Executive (EMEA)' }, { title: 'Account Manager' }];
+    assert.equal(L.matchLead({ title: 'Senior Account Executive' }, jobs).title, 'Sr. Account Executive (EMEA)');
+    assert.equal(L.matchLead({ title: 'Partnerships Lead' }, jobs), null);
+  });
+  t('💼 where to look: own board, remembered board, guesses, nothing', () => {
+    const settings = { companies: [{ name: 'n8n', url: 'https://jobs.ashbyhq.com/n8n', dream: true }] };
+    const leads = [{ id: '1', title: 'AE', company: 'n8n' }, { id: '2', title: 'AE', company: 'Cool Co' }, { id: '3', title: 'AE', company: 'Known Inc' }, { id: '4', title: 'AE', company: 'Nobody' }];
+    const boards = { [L.normName('Known Inc')]: { ats: 'lever', slug: 'known', at: now }, [L.normName('Nobody')]: { none: true, at: now } };
+    const { reqs } = L.leadRequests(leads, settings, boards, now, '');
+    assert.ok(reqs.some((r) => r.source === 'ashby' && r.slug === 'n8n' && r.dream && r.lead));
+    assert.ok(reqs.some((r) => r.source === 'lever' && r.slug === 'known'));
+    assert.deepEqual(reqs.filter((r) => r.guess === 'cool').map((r) => r.source + ':' + r.slug).sort(), ['ashby:cool', 'ashby:cool-co', 'greenhouse:cool', 'greenhouse:cool-co', 'lever:cool', 'lever:cool-co']);
+    assert.ok(!reqs.some((r) => /nobody/.test(r.slug)));
+  });
+  // the radar in lead mode
+  const D = 864e5;
+  const cfgS = { companies: [{ name: 'n8n', url: 'https://jobs.ashbyhq.com/n8n', dream: true }], filters: { titleExclude: ['engineer'] }, scoring: {} };
+  const leads = [{ id: '11', title: 'Account Executive, Mid-Market', company: 'n8n', location: 'Remote', url: 'https://www.linkedin.com/jobs/view/11/' },
+    { id: '22', title: 'Partnerships Manager', company: 'Cool Co', location: 'Vienna', url: 'https://www.linkedin.com/jobs/view/22/' },
+    { id: '33', title: 'Account Manager', company: 'Hidden GmbH', location: 'Remote EU', url: 'https://www.linkedin.com/jobs/view/33/' }];
+  const cand = { files: { 'search_profile.md': 'p', 'resume_base.md': '# Sam\n' }, settings: cfgS, manualUrl: '', leads };
+  const plan = [{ source: 'ashby', company: 'n8n', slug: 'n8n', dream: true, lead: true, _candidate: cand }, { source: 'ashby', company: 'Cool Co', slug: 'coolco', guess: 'cool', lead: true },
+    { source: 'greenhouse', company: 'Hidden GmbH', slug: 'hidden', guess: 'hidden', lead: true }];
+  const ashby = (id, title, days) => ({ id, title, location: 'Remote', isListed: true, isRemote: true, publishedAt: new Date(now - days * D).toISOString(), jobUrl: 'https://jobs.ashbyhq.com/x/' + id, applyUrl: 'a', descriptionPlain: 'Sell' });
+  const fetched = [{ data: JSON.stringify({ jobs: [ashby('a1', 'Account Executive, Mid-Market', 20), ashby('a2', 'Engineer', 1)] }) }, { data: JSON.stringify({ jobs: [ashby('c1', 'Partnerships Manager', 1)] }) }, { error: { message: '404' } }];
+  let st = { initialized: true, seen: {}, judgedBefore: now - 30 * D };
+  let out = await runNode(RAD.normalize, { input: [], state: st, nodes: { '⚙️ Plan run': plan, '🌐 Fetch job sources': fetched, '🗃️ Already sent': [] } });
+  t('💼 lead mode: found on the board → full posting (even if old); not found → title-only', () => {
+    const jobs = out.map((x) => x.json.job);
+    assert.equal(jobs.length, 3, JSON.stringify(jobs.map((j) => j.uid)));
+    const n8n = jobs.find((j) => j.company === 'n8n'); assert.ok(n8n.viaLinkedIn && n8n.dream && n8n.uid === 'ashby:n8n:a1' && /via LinkedIn/.test(n8n.sourceLabel));
+    assert.ok(jobs.find((j) => j.company === 'Cool Co').viaLinkedIn);
+    const hid = jobs.find((j) => j.company === 'Hidden GmbH'); assert.ok(hid.light && hid.uid === 'linkedin:33' && /Only the title/.test(hid.description));
+    assert.deepEqual(st.leadBoards[L.normName('Cool Co')].slug, 'coolco'); assert.ok(st.leadBoards.hidden.none);
+    assert.ok(st.seen['linkedin:11'] && st.seen['linkedin:33']); assert.equal(st.initialized, true);
+  });
+  out = await runNode(RAD.normalize, { input: [], state: st, nodes: { '⚙️ Plan run': plan, '🌐 Fetch job sources': fetched, '🗃️ Already sent': [] } });
+  t('💼 the same alert again → nothing new', () => assert.equal(out.length, 0));
+  st = { initialized: true, seen: {}, judgedBefore: now - 30 * D };
+  out = await runNode(RAD.normalize, { input: [], state: st, nodes: { '⚙️ Plan run': plan, '🌐 Fetch job sources': fetched,
+    '🗃️ Already sent': [{ uid: 'ashby:n8n:a1', alt_key: 'n8n|account executive, mid-market', folder: '2026-11-20_n8n' }, { uid: 'linkedin:33', alt_key: 'x', source: 'linkedin', folder: '' }] } });
+  t('💼 no second card for a job you already got one for (board card or title-only card)', () => assert.deepEqual(out.map((x) => x.json.job.company), ['Cool Co']));
+
+  // gate → light tier (not tailored), dream light even when the title-only score is low
+  const light = L.lightJob(leads[2]); const lightDream = Object.assign(L.lightJob({ id: '44', title: 'AE', company: 'n8n', location: '' }), { dream: true });
+  const fitOf = (score) => ({ content: [{ type: 'text', text: JSON.stringify({ score, skills_fit: score, values_fit: 60, location_eligible: 'unclear', english_only: 'unclear', comp_meets_floor: 'unknown', why: ['Title matches'] }) }] });
+  const g = await runNode(RAD.gate, { input: [fitOf(70), fitOf(30)], state: {},
+    nodes: { '🧹 Normalize · dedupe · filter': [{ job: light }, { job: lightDream }], '⚙️ Plan run': [{ _candidate: Object.assign({}, cand, { settings: { scoring: {} } }) }] } });
+  t('💼 gate: title-only jobs become title-only cards, never tailored', () => {
+    assert.deepEqual(g.map((x) => x.json.tier), ['light', 'light']); assert.ok(!g.some((x) => x.json.tailorRequest)); assert.ok(g[0].json.jrId);
+  });
+  t('💼 title-only card: LinkedIn link, says nothing is tailored, Applied/Skip', () => {
+    const c = L.lightCard({ job: light, fit: { score: 70, why: ['Title matches'] }, jrId: 'JR-ABC123' }, {});
+    assert.ok(/from the title only/.test(c.text) && /nothing is tailored/.test(c.text));
+    const kb = c.reply_markup.inline_keyboard.flat();
+    assert.equal(kb[0].url, 'https://www.linkedin.com/jobs/view/33/'); assert.ok(kb.some((b) => b.callback_data === 'ap:JR-ABC123'));
+  });
+  const lp = await runNode(OTH.linkedin_parse, { input: [{ date: new Date().toUTCString(), subject: 'New jobs for account executive', textPlain: TXT, textHtml: HTML },
+    { date: new Date(now - 10 * D).toUTCString(), subject: 'Old alert', textPlain: TXT }], state: {} });
+  t('💼 alert workflow: fresh alerts → one batch of leads; old ones ignored', () => { assert.equal(lp.length, 1); assert.equal(lp[0].json.kind, 'leads'); assert.equal(lp[0].json.leads.length, 2); });
+  const st2 = {};
+  const bad = await runNode(OTH.linkedin_parse, { input: [{ date: new Date().toUTCString(), subject: 'Account Executive at Acme and 9 more jobs', textPlain: 'something new and unreadable', textHtml: '<p>nope</p>' }], state: st2 });
+  const bad2 = await runNode(OTH.linkedin_parse, { input: [{ date: new Date().toUTCString(), subject: 'Account Executive at Acme and 9 more jobs', textPlain: 'x' }], state: st2 });
+  t('💼 an alert it can\'t read → a heads-up the same day, once a day', () => { assert.ok(bad.some((x) => x.json.kind === 'tg_text' && /LinkedIn alert/.test(x.json.tg.text))); assert.equal(bad2.length, 0); });
 }
 
 // 💬 chat: staged edits, saved only after the user's own "yes"

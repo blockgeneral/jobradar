@@ -202,3 +202,29 @@ const r = $input.first().json || {};
 if (r.output) return [{ json: { output: r.output } }];
 const err = (r.error && (r.error.message || r.error)) || 'no answer';
 return [{ json: { output: "Sorry — I couldn't do that just now (" + String(err).slice(0, 160) + "). Is JobRadar running? Try `./jobradar status`." } }];
+
+//@node linkedin_parse
+// 💼 LinkedIn alert → leads: the jobs in each alert email go to the radar, which finds each posting on the company's
+// own job board (full description, tailored files) or sends a title-only card. LinkedIn pages are never opened.
+const state = $getWorkflowStaticData('global');
+const now = Date.now();
+const leads = []; let unreadable = 0;
+for (const it of $input.all()) {
+  const e = it.json || {};
+  const at = Date.parse(e.date || '') || now;
+  if (now - at > 3 * 864e5) continue; // old alerts (e.g. right after switching this on) aren't news
+  const found = parseLinkedInAlert(e.textPlain || e.text || '', e.textHtml || e.html || '');
+  if (!found.length && /job/i.test(String(e.subject || '')) && !/applied|application|viewed/i.test(String(e.subject || ''))) unreadable++;
+  for (const l of found) if (!leads.some((x) => x.id === l.id)) leads.push(l);
+}
+const out = [];
+if (leads.length) out.push({ json: { kind: 'leads', leads } });
+// the parser is the fragile part (LinkedIn changes its emails): say so the same day, once a day
+if (unreadable && (!state.unreadableAt || now - state.unreadableAt > 864e5)) {
+  state.unreadableAt = now;
+  const text = 'JobRadar couldn\'t read the jobs in a LinkedIn alert email — LinkedIn may have changed its format. Your other sources keep working; ask Claude to update the LinkedIn parser (forward it the alert).';
+  out.push({ json: { kind: 'tg_text', tg: { text: '🩺 ' + text, disable_web_page_preview: true } } });
+  out.push({ json: { kind: 'email', subject: 'JobRadar: a LinkedIn alert couldn\'t be read', text, html: `<p>${escHtml(text)}</p>` } });
+}
+if (leads.length) { state.lastLeadsAt = now; state.leadCount = (state.leadCount || 0) + leads.length; }
+return out;

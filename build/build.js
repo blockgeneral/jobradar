@@ -123,7 +123,7 @@ const radar = workflow('JobRadarMain0001', 'JobRadar · 1 Radar (every 15 min)',
   a.node('▶️ Run now', 'n8n-nodes-base.manualTrigger', 1, [0, 200], {});
   hook(a, '🔗 Run from CLI', [0, 400], 'jobradar-run');
   readFiles(a, '📂 Read settings + candidate', [240, 100], '/{settings.json,candidate/*.md}');
-  a.code('⚙️ Plan run', [480, 100], R.plan_run, ['util', 'sources'], 'Which job boards to check');
+  a.code('⚙️ Plan run', [480, 100], R.plan_run, ['util', 'sources'], 'Which job boards to check (or where to find LinkedIn alert jobs)');
   a.http('🌐 Fetch job sources', [720, 100], {
     method: '={{ $json.method || "GET" }}', url: '={{ $json.url }}',
     sendHeaders: true, headerParameters: { parameters: [
@@ -141,8 +141,12 @@ const radar = workflow('JobRadarMain0001', 'JobRadar · 1 Radar (every 15 min)',
   a.code('🧹 Normalize · dedupe · filter', [1200, 100], R.normalize, ['util', 'sources', 'prompts'], 'New + relevant only (no AI cost yet)');
   anthropic(a, '🤖 Screen (Claude Haiku)', [1440, 100], 'scoreRequest', 120000, 'Location, language, pay, fit 0–100');
   a.code('🎯 Gate', [1680, 100], R.gate, ['util', 'prompts'], 'Good matches only');
-  a.node('🔀 Tailor now or list', 'n8n-nodes-base.switch', 3.2, [1800, 100], { mode: 'expression', numberOutputs: 2, output: "={{ $json.tier === 'digest' ? 1 : 0 }}", options: {} },
-    { notes: 'Strong + dream → now; 50–74 → daily list', notesInFlow: true });
+  a.node('🔀 Tailor now or list', 'n8n-nodes-base.switch', 3.2, [1800, 100], { mode: 'expression', numberOutputs: 3, output: "={{ ({ digest: 1, light: 2 })[$json.tier] ?? 0 }}", options: {} },
+    { notes: 'Strong + dream → now; 50–74 → daily list; LinkedIn-only → title card', notesInFlow: true });
+  a.code('🔎 LinkedIn title-only cards', [1920, 520], R.light_cards, ['util', 'notify']);
+  sendCall(a, '📨 Send title-only cards', [2160, 520]);
+  a.code('📝 Title-only rows', [1920, 700], R.light_rows, ['util']);
+  tableInsert(a, '🗃️ Add title-only to tracker', [2160, 700], TABLE);
   anthropic(a, '✍️ Tailor (Claude Sonnet)', [1920, 100], 'tailorRequest', 240000, 'Resume + cover letter from your files');
   a.code('📝 Worth-a-look rows', [1920, 320], R.digest_rows, ['util']);
   tableInsert(a, '🗃️ Add to daily list', [2160, 320], TABLE);
@@ -175,6 +179,10 @@ const radar = workflow('JobRadarMain0001', 'JobRadar · 1 Radar (every 15 min)',
   a.linkOut('🔀 Tailor now or list', 0, '✍️ Tailor (Claude Sonnet)');
   a.linkOut('🔀 Tailor now or list', 1, '📝 Worth-a-look rows');
   a.link('📝 Worth-a-look rows', '🗃️ Add to daily list');
+  a.linkOut('🔀 Tailor now or list', 2, '🔎 LinkedIn title-only cards');
+  a.linkOut('🔀 Tailor now or list', 2, '📝 Title-only rows');
+  a.link('🔎 LinkedIn title-only cards', '📨 Send title-only cards');
+  a.link('📝 Title-only rows', '🗃️ Add title-only to tracker');
   a.link('✍️ Tailor (Claude Sonnet)', '🛡️ Guardrails & compose');
   a.link('🛡️ Guardrails & compose', '📑 Render requests', '🗂️ Editable sources');
   a.link('📑 Render requests', '🖨️ Make Word / PDF files');
@@ -295,7 +303,29 @@ const chatWf = workflow('JobRadarChat0001', 'JobRadar · 6 Chat (talk to JobRada
   a.link('🧠 Ask the helper', '💬 Reply');
 });
 
-const all = { send, radar, actions, inbox, replies, reports, chat: chatWf };
+// ───────────────────────── LinkedIn alerts (optional) ─────────────────────────
+// Reads LinkedIn's job-alert emails in your own mailbox (IMAP, nothing else) the moment they arrive and hands the jobs
+// to the radar. Switched on by ./jobradar linkedin. Emails are left unread and untouched.
+const LI_FROM = '[["OR", ["FROM", "jobalerts-noreply@linkedin.com"], ["FROM", "jobs-listings@linkedin.com"]]]';
+const linkedin = workflow('JobRadarLnkd0001', 'JobRadar · 7 LinkedIn alerts (optional)', (a) => {
+  a.sticky([-60, -300], 620, 200, '## LinkedIn job alerts → JobRadar\nYour LinkedIn alert emails, read from your own inbox as they arrive. Each job goes to the radar: found on the company\'s own job board → full screening + tailored files; not found → a title-only card linking to LinkedIn. JobRadar never opens LinkedIn pages.', 4);
+  a.node('📨 LinkedIn alert emails', 'n8n-nodes-base.emailReadImap', 2.1, [0, 0], {
+    mailbox: '={{ $env.LINKEDIN_MAILBOX || "INBOX" }}', postProcessAction: 'nothing', format: 'simple',
+    options: { customEmailConfig: LI_FROM, trackLastMessageId: true } }, { credentials: IMAP });
+  a.node('🧪 Test with pinned email', 'n8n-nodes-base.manualTrigger', 1, [0, 200], {});
+  a.code('💼 Jobs in the alert', [240, 0], O.linkedin_parse, ['util', 'sources']);
+  a.node('🔀 Leads or alert', 'n8n-nodes-base.switch', 3.2, [460, 0], { mode: 'expression', numberOutputs: 2, output: "={{ $json.kind === 'leads' ? 0 : 1 }}", options: {} });
+  a.http('📡 Hand to the radar', [700, -100], { method: 'POST', url: "={{ ($env.JOBRADAR_SELF_URL || 'http://127.0.0.1:5678') + '/webhook/jobradar-run' }}", sendBody: true, contentType: 'json', specifyBody: 'json',
+    jsonBody: '={{ JSON.stringify({ leads: $json.leads }) }}', options: { timeout: 900000 } }, { onError: 'continueRegularOutput' });
+  sendCall(a, '📣 Send parser alert', [700, 100]);
+  a.link('📨 LinkedIn alert emails', '💼 Jobs in the alert');
+  a.link('🧪 Test with pinned email', '💼 Jobs in the alert');
+  a.link('💼 Jobs in the alert', '🔀 Leads or alert');
+  a.linkOut('🔀 Leads or alert', 0, '📡 Hand to the radar');
+  a.linkOut('🔀 Leads or alert', 1, '📣 Send parser alert');
+});
+
+const all = { send, radar, actions, inbox, replies, reports, chat: chatWf, linkedin };
 fs.mkdirSync(path.join(root, 'workflows'), { recursive: true });
 for (const f of fs.readdirSync(path.join(root, 'workflows'))) if (f.endsWith('.json')) fs.unlinkSync(path.join(root, 'workflows', f));
 let errors = 0;
