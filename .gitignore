@@ -8,3 +8,6 @@
 /gmail-filter.xml
 # deps
 node_modules/
+
+# backups the chat and Claude keep before changing your files
+*.bak
