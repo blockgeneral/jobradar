@@ -3,7 +3,7 @@
 const fs = require('fs'); const path = require('path'); const assert = require('assert');
 const ROOT = path.join(__dirname, '..');
 const libSrc = ['util', 'sources', 'prompts', 'guard', 'notify'].map((n) => fs.readFileSync(path.join(ROOT, 'src/lib', n + '.js'), 'utf8')).join('\n');
-const L = new Function('$env', libSrc + '; return { normalize, watchList, normName, preFilter, checkTailoring, keywordCoverage, toIso, detectAts, companiesFromSettings, buildRequests, parseBody, telegramCard, emailForJob, computeReport, telegramReport, inQuietHours, shortHash, fillCoverLetter, countryLock };')({ NOTIFY_CHANNELS: 'telegram,email' });
+const L = new Function('$env', libSrc + '; return { normalize, watchList, normName, preFilter, checkTailoring, keywordCoverage, toIso, detectAts, companiesFromSettings, buildRequests, parseBody, telegramCard, emailForJob, computeReport, telegramReport, inQuietHours, shortHash, fillCoverLetter, countryLock, claimCheck };')({ NOTIFY_CHANNELS: 'telegram,email' });
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('  ✔ ' + name); };
 const now = Date.now();
 
@@ -92,7 +92,15 @@ async function runNode(code, { input = [], nodes = {}, env = {}, state = {} }) {
   });
   t('sales never-claim patterns', () => {
     const issues = L.checkTailoring('# A\n\n## S\n', '# A\n\n## S\nBuilt the partner program. Skills: PostgreSQL', 'x', { forbidden: alex.guardrails.neverClaim });
-    assert.equal(issues.length, 2);
+    assert.equal(issues.filter((i) => !/^Upgraded claim/.test(i)).length, 2);
+    assert.ok(issues.some((i) => /^Upgraded claim: "built the partner program/.test(i)), JSON.stringify(issues));
+  });
+  t('upgraded claims: "worked" never becomes "built", "helped lead" stays hedged', () => {
+    const cv = 'Worked the partner channel (agencies): built outreach lists, ran partner discussions. Helped lead the shift to annual contracts.';
+    assert.ok(L.claimCheck(cv, '- Built the partner channel with agencies')[0].includes('built the partner channel'));
+    assert.ok(/helped with this/.test(L.claimCheck(cv, '- Led the shift to annual contracts')[0]));
+    assert.deepEqual(L.claimCheck(cv, '- Built outreach lists for agencies\n- Helped lead the shift to annual contracts'), []);
+    assert.deepEqual(L.claimCheck(cv, "Your product was built for remote teams, and I'd like to grow your partner base."), []);
   });
   t('ATS keyword coverage', () => assert.deepEqual(L.keywordCoverage(['event-driven', 'MEDDPICC', 'on-call', 'design docs'], clean).missing, ['MEDDPICC']));
 

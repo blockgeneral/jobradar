@@ -121,9 +121,14 @@ http.createServer(async (req, res) => {
       if (tool === 'candidate_files') {
         const doc = j.messages[0].content.find((c) => c.type === 'document');
         log('anthropic', { tool, hasPdf: !!(doc && Buffer.from(doc.source.data, 'base64').slice(0, 4).toString() === '%PDF'), prompt: j.messages[0].content.slice(-1)[0].text.slice(0, 200) });
+        const mine = ((j.messages[0].content.find((c) => c.type === 'text' && /<my_cover_letter>/.test(c.text)) || {}).text || '').replace(/<\/?my_cover_letter>/g, '').trim();
+        const coverMd = mine
+          ? '<!-- your own letter; slots added -->\n' + mine.replace(/^Dear[^\n]*/, 'Dear {{HIRING_TEAM}},') + '\n\n{{WHY_COMPANY}}\n\n{{LOCATION_LINE}}\n\n<!-- options:\n- Remote: "Remote suits me." -->'
+          : 'Dear {{HIRING_TEAM}},\n\nStory.\n\n{{WHY_COMPANY}}\n\n{{LOCATION_LINE}}\n\n<!-- options:\n- Remote: "Remote is fine." -->';
         return json({
+          cv_text: baseResume,
           review_md: '**What works:** clear results.\n**Fix first:** 1) …', experience_inventory_md: '<!-- EXPERIENCE INVENTORY -->\n# Rotaflow\n- checkout rewrite\n# Positioning by role type\n## Backend\n- Lead with: checkout rewrite',
-          resume_md: baseResume, cover_letter_md: 'Dear {{HIRING_TEAM}},\n\nStory.\n\n{{WHY_COMPANY}}\n\n{{LOCATION_LINE}}\n\n<!-- options:\n- Remote: "Remote is fine." -->',
+          resume_md: baseResume, cover_letter_md: coverMd,
           search_profile_md: '# Who I am\nTODO', title_include: ['backend'], title_exclude: ['junior'], board_queries: ['backend engineer'], wwr_category: 'remote-back-end-programming-jobs', remotive_category: 'software-dev', remoteok_tag: 'backend', language_exclude: ['fluent (in )?german'] });
       }
       const user = j.messages[0].content;

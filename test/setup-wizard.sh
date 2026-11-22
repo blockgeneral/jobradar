@@ -19,10 +19,12 @@ google-chrome --headless=new --no-sandbox --disable-gpu --no-pdf-header-footer -
 export PATH="$ROOT/test/fake-docker:$PATH" FAKE_DOCKER_STATE="$S" FAKE_N8N_BIN="${N8N_BIN:-n8n}" FAKE_API=http://127.0.0.1:5689
 export ANTHROPIC_BASE_URL=$FAKE_API TELEGRAM_API_BASE=$FAKE_API JOBRADAR_HOOK=http://127.0.0.1:5698/webhook
 # answers, in order: time zone · key · channel (1 = Telegram) · bot token · (chat found automatically) · profile 1 = import CV ·
-# CV path (drag-and-drop style) · roles · location · pay · companies (2 links + 1 bad) · empty line ends the list
+# CV path (drag-and-drop style) · roles · location · pay · values · own cover letter · companies (2 links + 1 bad) · empty line ends the list
 ESCAPED_CV="$(printf '%s' "$S/My CV.pdf" | sed 's/ /\\ /g') "
+printf 'Dear hiring team,\n\nI once rebuilt a checkout over a long weekend and nobody noticed, which was the point.\n\nBest,\nSam\n' > "$S/My Letter.md"
+ESCAPED_CL="$(printf '%s' "$S/My Letter.md" | sed 's/ /\\ /g') "
 cd "$W"
-printf '%s\n' "Europe/Vienna" "wrong-key" "test-key" "1" "123:abc" "1" "$ESCAPED_CV" "Backend engineer" "Lisbon; remote EU" "75k EUR" "remote-first, strong engineering culture" \
+printf '%s\n' "Europe/Vienna" "wrong-key" "test-key" "1" "123:abc" "1" "$ESCAPED_CV" "Backend engineer" "Lisbon; remote EU" "75k EUR" "remote-first, strong engineering culture" "$ESCAPED_CL" \
   "https://jobs.ashbyhq.com/supabase*" "https://job-boards.greenhouse.io/anthropic" "https://example.com/careers" "" \
   | ./jobradar setup 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | tee "$S/setup.out"
 echo; echo "──── checks"
@@ -33,6 +35,7 @@ grep -q "^TELEGRAM_CHAT_ID=42" .env && ok "Telegram chat id found automatically"
 [ "$(stat -c %a .env)" = 600 ] && ok ".env is private (600)"
 for f in resume_base.md cover_letter_base.md experience_inventory.md search_profile.md cv_review.md; do [ -f "candidate/$f" ] || { echo "missing candidate/$f"; exit 1; }; done; ok "CV imported → 4 candidate files + cv_review.md"
 grep -q "Your CV review" "$S/setup.out" && ok "review shown in the terminal"
+grep -q "kept your own cover letter" "$S/setup.out" && grep -q "rebuilt a checkout over a long weekend" candidate/cover_letter_base.md && grep -q "{{WHY_COMPANY}}" candidate/cover_letter_base.md && ok "own cover letter kept word for word, slots added"
 node -e 'const s=require("./settings.json");const c=JSON.stringify(s.companies);if(!c.includes("supabase")||!c.includes("anthropic")||c.includes("example.com"))process.exit(1)' && ok "companies added from pasted links (bad link refused)"
 grep -q "not a supported job board" "$S/setup.out" && ok "unsupported link explained"
 grep -q "workflows installed and switched on (4)" "$S/setup.out" && ok "4 workflows installed + published (Telegram user)"

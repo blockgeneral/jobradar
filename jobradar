@@ -170,12 +170,21 @@ import_cv() {
   loc="$(ask 'Where are you based, and where can you work? (e.g. Vienna; remote EU or hybrid Vienna)')"
   pay="$(ask 'Minimum pay, if you have one (e.g. 100k EUR OTE) — Enter to skip')"
   vals="$(ask 'What matters most in a company? (e.g. remote-first, mission I believe in, strong team, pay transparency)')"
+  local cl clname coverarg=""
+  cl="$(clean_path "$(ask 'Got a cover letter you already use? Drag it here to keep it word for word (PDF, .md or .txt) — Enter to skip')")"
+  if [ -n "$cl" ]; then
+    if [ -f "$cl" ]; then case "$cl" in *.pdf|*.PDF|*.md|*.txt) ;; *) warn "Cover letter: save it as PDF first — skipping it for now"; cl="";; esac
+    else warn "Can't find that cover letter — skipping it for now"; cl=""; fi
+  fi
   mkdir -p candidate/import; name="$(basename "$f")"; cp "$f" "candidate/import/$name"
+  if [ -n "$cl" ]; then clname="cover-$(basename "$cl")"; cp "$cl" "candidate/import/$clname"; coverarg="--cover"; fi
   say "  Reading your CV with Claude (about a minute)…"
-  if dc run --rm --no-deps -T --user "$JOBRADAR_UID:$JOBRADAR_GID" -v "$PWD:/w" --entrypoint node n8n /w/tools/import-cv.js "/w/candidate/import/$name" "$targets" "$loc" "$pay" "$vals" --write /w > candidate/.review.tmp 2> candidate/.import.err; then
+  if dc run --rm --no-deps -T --user "$JOBRADAR_UID:$JOBRADAR_GID" -v "$PWD:/w" --entrypoint node n8n /w/tools/import-cv.js "/w/candidate/import/$name" "$targets" "$loc" "$pay" "$vals" ${coverarg:+--cover "/w/candidate/import/$clname"} --write /w > candidate/.review.tmp 2> candidate/.import.err; then
     say ""; say "${B}── Your CV review ───────────────────────────────${N}"; cat candidate/.review.tmp; say "${B}────────────────────────────────────────────────${N}"
     rm -f candidate/.review.tmp candidate/.import.err
     ok "wrote candidate/resume_base.md, cover_letter_base.md, experience_inventory.md, search_profile.md (+ cv_review.md)"
+    if [ -n "$coverarg" ]; then ok "kept your own cover letter — only the {{HIRING_TEAM}}, {{WHY_COMPANY}} and {{LOCATION_LINE}} slots were added"
+    else say "  ${D}cover_letter_base.md is a draft written from your CV — replace it with your own words when you can.${N}"; fi
     ok "set job-title filters in settings.json from your target roles"
     say "  ${D}Open candidate/search_profile.md and fill in any TODO lines. Then do the interview (onboarding/README.md) — it starts from this CV and fills the gaps above.${N}"
   else
