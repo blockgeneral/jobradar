@@ -10,7 +10,8 @@
  IMAP       │ 4 Reply detection (opt-in): inbox mail about applied companies → Claude│
  hourly     │ 5 Reports & digest: weekly / monthly / daily digest per settings       │
  you        │ 6 Chat (sign-in protected page) → renderer /chat → reply              │
- your inbox │ 7 LinkedIn alerts (IMAP) → jobs in the email → 1 Radar (lead mode)     │
+ your inbox │ 7 LinkedIn alerts (IMAP, on arrival) → jobs in the email → 1 Radar     │
+            │   (lead mode: own board / remembered / guessed board → else title-only)│
             │ 9 Send: Telegram message · Telegram album · email (SMTP)               │
             │ table jobradar_jobs: one row per match (status, timestamps, outcome)   │
             └───────────────────────────────────────────────────────────────────────┘
@@ -32,7 +33,11 @@
 - *No public URL needed*: Telegram buttons are polled with `getUpdates`; email buttons are `mailto:` commands read over IMAP.
 - *Settings over workflow edits*: users change `settings.json` and `candidate/`; workflows read them on every run, so updates never overwrite personal config.
 - *LinkedIn without scraping*: workflow 7 reads LinkedIn's alert emails (IMAP, read-only) and posts the jobs to the radar's webhook as `{leads}`. The radar looks each one up on the company's own board (watched board, a board found before, or a guessed public Ashby/Greenhouse/Lever slug), screens the full posting, and falls back to a title-only card. Dedupe is against jobs that actually got a card (tracker rows with files, or source `linkedin`).
-- *State*: the tracker is an n8n Data Table (survives updates, editable in the UI); per-workflow static data only caches "seen" job IDs.
+- *Reposts and "judged"*: a job is *judged* once it was screened or filtered for a reason other than its age. Dream-company jobs and LinkedIn leads are skipped only when judged or when a card actually went out (tracker row with files, or a LinkedIn title-only card, matched by ID or company + title); otherwise they come through even with an old date. Everything seen before this rule existed counts as judged, so no burst of old roles.
+- *Relocation*: `companies[].relocateTo` is passed to the screener as an explicit exception to the candidate's location rule, and silences the code-level "this posting is UK/US-only" warning for those countries. Adding or changing it clears that company's seen/judged entries once, so its open roles get one fresh look.
+- *Night pause*: with `quietHours.pause`, ⚙️ Plan run returns nothing for scheduled runs in the window (no AI calls, no messages); LinkedIn lead batches are parked in static data and run on the first scheduled run after. Runs started by the user (CLI, pasted link) still go through.
+- *Title-only LinkedIn jobs* use the same tiers as everything else (card at `instantAt` or dream, daily list at the minimum, else dropped) and are never tailored. LinkedIn's location string is passed as reliable ("City (Remote)" = remote in that country).
+- *State*: the tracker is an n8n Data Table (survives updates, editable in the UI). Per-workflow static data holds `seen` (job IDs + company|title keys, 90 days), `judged`, `leadBoards` (which public board a LinkedIn company uses, or none), `pendingLeads` (night pause), `relocateKey`, source health.
 - *Chat edits are staged, consent is checked in code*: Claude in the chat can only stage changes (text replace, facts, settings paths, companies). The helper shows before → after and writes only after the user's own latest message says yes; a bare "yes"/"no" is handled without the model. n8n keeps a read-only mount; the helper is the single writer and keeps a .bak.
 - *Run status for "why so quiet?"*: each radar run posts its numbers (filter reasons, screened, sent, broken sources) to the helper (`output/.jobradar/status.jsonl`); the chat reads them.
 - *A pasted link uses the board's feed*: known job boards are looked up through their API (pages are often built by JavaScript); unknown sites are read as HTML. Pasted links skip dedupe and filters but say why they'd normally be skipped.

@@ -87,13 +87,27 @@ You'll see your **CV review**, then setup builds and starts everything (a few mi
 ## 8. Make it yours — in the chat
 - Run `./jobradar chat`. The first time, n8n asks you to create a local login (only on your computer) — then the chat opens.
 - Say **"interview me"**: it asks the open questions from your CV review one at a time and saves your answers to your fact sheet, which makes tailoring much better.
-- Change anything the same way: companies, filters, pay, quiet hours, "why so quiet?", or paste a job link to check it now. Every change is shown first and saved only when you say yes.
+- Change anything the same way: companies, filters, pay, "no notifications between 23:00 and 07:00", "I'd relocate to the UK for Anthropic", "why so quiet?", or paste a job link to check it now. Every change is shown first and saved only when you say yes.
 - Prefer files? Everything also lives in `candidate/` and `settings.json` ([reference](SETTINGS.md)). The voice interview for Claude app users: [onboarding/README.md](../onboarding/README.md).
+
+## 9. Optional: read your LinkedIn job alerts too
+If you get LinkedIn job alert emails, JobRadar can read them as a safety net. It never opens LinkedIn; it only reads those emails in your inbox (and leaves them unread). Each job is looked up on the company's own job board for the full description; if it isn't there, you get a title-only card when it's a strong match.
+
+1. Create an **app password** for the mailbox your alerts go to (Gmail: https://myaccount.google.com/apppasswords — needs 2-step verification). Name it `JobRadar`.
+2. Run:
+   ```bash
+   ./jobradar linkedin
+   ```
+   Enter the address and paste the app password. It tests the login before switching anything on.
+3. That's it: your existing alerts need nothing. Optional: add an alert on LinkedIn for companies you watch by name only (no careers link), if they post jobs on LinkedIn.
+
+Turn it off with `./jobradar linkedin off`.
 
 ## Everyday commands
 ```bash
 ./jobradar chat         # change anything in plain words
 ./jobradar run          # check job boards now
+./jobradar linkedin     # read LinkedIn alert emails too (off: linkedin off)
 ./jobradar companies    # add companies
 ./jobradar import-cv    # import a new CV version
 ./jobradar status       # what's running + latest jobs
@@ -103,7 +117,7 @@ You'll see your **CV review**, then setup builds and starts everything (a few mi
 ```
 
 ## Keep it running
-It checks every 15 minutes while the computer is awake and Docker is running.
+It checks every 15 minutes while the computer is awake and Docker is running (except during a night pause, if you set one).
 - **Mac:** System Settings → Battery → Options → *Prevent automatic sleeping when the display is off* (on power).
 - **Windows:** Settings → System → Power → *When plugged in, put my device to sleep after* → Never. Keep Docker Desktop running.
 - **Always-on:** the same folder works on a small Linux server (~€4/month).
@@ -113,4 +127,5 @@ It checks every 15 minutes while the computer is awake and Docker is running.
 - **"runs inside WSL"** — you're in Git Bash or PowerShell; open the Ubuntu window instead.
 - **Key rejected** — add credit in the Anthropic console.
 - **Telegram chat not found** — press Start in your bot, run `./jobradar setup` again.
-- **No job cards** — `./jobradar logs`, and check n8n → Executions at http://localhost:5678.
+- **No job cards** — ask the chat "why so quiet?", or `./jobradar logs` and n8n → Executions at http://localhost:5678.
+- **LinkedIn: sign-in failed** — use an app password, not your normal password, then `./jobradar linkedin` again.

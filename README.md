@@ -2,7 +2,7 @@
 
 **Be one of the first applicants, with an application that's actually yours.**
 
-Most roles get 100+ applications within hours, and recruiters read the first few dozen. JobRadar checks the career pages of companies you care about (and the big remote job boards) every 15 minutes, screens each new role against your skills *and* what you value in a company, tailors your resume and cover letter from your own material, checks the AI didn't invent anything, and sends you one tidy notification with the files and an Apply button.
+Most roles get 100+ applications within hours, and recruiters read the first few dozen. JobRadar watches the career pages of companies you care about, the big remote job boards and (optionally) your LinkedIn job alerts. It screens every new role against your skills *and* what you value in a company, tailors your resume and cover letter from your own material, checks the AI didn't invent anything, and sends you one tidy notification with the files and an Apply button.
 
 **You always apply yourself.** JobRadar never submits anything, never logs into job sites, never scrapes LinkedIn.
 
@@ -14,93 +14,89 @@ Built with [n8n](https://n8n.io) and [Claude](https://claude.ai). Free and open 
 📊 87/100 (skills 85 · values 80) · 💶 €130K – €160K OTE · 🕒 22 min ago
 ✨ Full-cycle AE on a technical product, annual contracts
 💚 remote-first: "work from anywhere"
+✏️ Resume: summary rewritten · 2 bullets reworded — see "What changed"
 
 ⚠️ Check before sending
 • MEDDPICC is required — your resume doesn't claim it
 
 [🚀 Apply] [📄 Job post]
-[🔎 Recruiters] [🔎 Hiring team]
+[👤 Jane (hiring manager)] [🔎 Recruiters]
 [📋 Copy LinkedIn note]
 [✅ Applied] [⏭ Skip]
-📎 Your_Name_Resume_n8n.docx · Your_Name_Cover_Letter_n8n.docx
+📎 Your_Name_Resume_n8n.docx · Your_Name_Cover_Letter_n8n.docx · Your_Name_What_Changed_n8n.docx
 ```
+
+**Contents:** [Setup](#setup) · [How it works](#how-it-works) · [How to use it](#how-to-use-it) · [Commands](#commands) · [Troubleshooting](#troubleshooting) · [Privacy](#privacy) · [For developers](#for-developers)
 
 ---
 
-## What you need (about 20 minutes)
+## Setup
 
-1. **Docker** — [Docker Desktop](https://www.docker.com/products/docker-desktop/) on Mac or Windows (Windows: with WSL/Ubuntu), Docker Engine on Linux. Open it.
-2. **A Claude API key** — [platform.claude.com](https://platform.claude.com) → API keys. Claude Max and Team plans include monthly API credits (link your Console org under claude.ai Settings → Billing); otherwise add ~$10 of credit. Expect roughly $10–20 a month (estimate; check your usage page after week one).
-3. **Somewhere to be notified** — Telegram (a bot you create in 1 minute with @BotFather) and/or email (Gmail, Outlook, iCloud or any SMTP/IMAP mailbox with an app password).
+About 20 minutes. Works on **Mac, Windows (via WSL) and Linux**. Click-by-click for each: [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
 
-## Install
+### What you need
 
-Works on **Mac, Windows (via WSL) and Linux** — step-by-step for each: [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
+1. **Docker**: [Docker Desktop](https://www.docker.com/products/docker-desktop/) on Mac or Windows (Windows: with WSL/Ubuntu), Docker Engine on Linux. Open it.
+2. **A Claude API key**: [platform.claude.com](https://platform.claude.com) → API keys. Claude Max and Team plans include monthly API credits (link your Console org under claude.ai Settings → Billing); otherwise add ~$10 of credit. Expect roughly $10–20 a month (estimate; check your usage page after week one).
+3. **Somewhere to be notified**: Telegram (a bot you create in a minute with @BotFather) and/or email (Gmail, Outlook, iCloud or any SMTP/IMAP mailbox with an app password).
+4. **Your CV as a PDF** (Word: Save as PDF · LinkedIn: your profile → More → Save to PDF).
+
+### Install
 
 ```bash
-git clone https://github.com/<you>/jobradar.git
+git clone https://github.com/blockgeneral/jobradar.git
 cd jobradar
 ./jobradar setup
 ```
 
-The setup asks for your key, connects Telegram or email (it finds your Telegram chat by itself and tests everything), **imports your current CV** (PDF or LinkedIn export — you get an honest review and your starting files in about a minute), takes your list of companies, and runs a first search. **Within a few minutes you get your 3 best matches from the last 7 days**, so you can see it working straight away. After that, new matches arrive within ~15 minutes of being posted.
+The setup wizard:
+1. tests your Claude key,
+2. connects Telegram (it finds your chat by itself) and/or email,
+3. **imports your CV** and gives you an honest review plus your starting files, in about a minute,
+4. takes your list of companies (career-page links or just names; `*` marks a dream company),
+5. starts everything and runs a first search. **Within a few minutes you get your 3 best matches from the last 7 days.**
 
-## Step 2: the interview (do this once, it's what makes it good)
+After that, new matches arrive within ~15 minutes of being posted.
 
-The CV import gets you started; the interview makes it yours. JobRadar can only be as good as what it knows about you. The [onboarding interview](onboarding/README.md) is a 30-minute conversation with Claude, like an intake call with a recruiter: one question at a time, follow-ups on the details, and an honest list of what you should never claim. Voice works. It writes four files into `candidate/`:
+### Make it yours: the interview
+
+The CV import gets you started; the interview makes the applications sound like you. Open the chat (`./jobradar chat`) and say **"interview me"**: it asks the open questions from your CV review one at a time and saves your answers. For a deeper session, the [onboarding interview](onboarding/README.md) is a 30-minute conversation in the Claude app, like an intake call with a recruiter (voice works). Either way you end up with four files in `candidate/`:
 
 | File | What it is |
 |---|---|
-| `experience_inventory.md` | Everything true about your work, in detail, plus what to lead with for each type of role you target. The tailoring step may use any fact here — and nothing else. |
+| `experience_inventory.md` | Everything true about your work, plus what you must never claim. Tailoring may use any fact here, and nothing else. |
 | `resume_base.md` | Your master resume. |
-| `cover_letter_base.md` | Your letter in your voice. Only three slots change per job; the rest stays word for word. |
-| `search_profile.md` | Your must-haves (where you can work, languages, minimum pay), the roles you want, and **what you value in a company**, ranked. |
+| `cover_letter_base.md` | Your letter in your words. Only three slots change per job; the rest stays word for word. |
+| `search_profile.md` | Your must-haves (where you can work, languages, pay), the roles you want, and **what you value in a company**, ranked. |
 
-## Every day
+### Optional: LinkedIn job alerts
 
-- A notification arrives. Read the ⚠️ lines, open the two Word files, fix anything, then tap **Apply**.
-- Tap **✅ Applied** or **⏭ Skip** so your stats stay honest. (Email: the buttons open a pre-filled email; just hit send.)
-- Tap **🔎 Recruiters / Hiring team** and **📋 Copy LinkedIn note** to reach a human the same day.
-- Want to edit the files outside Word? Edit `output/<job>/resume.md`, then `./jobradar rerender <job>`.
+If you use LinkedIn job alerts, JobRadar can read those emails too, as a safety net:
 
-**Every Monday** you get a report: what was found, what you applied to, responses, rejections, intro calls, how fast you were — and whether applying early actually gets you more replies. On the 1st of each month, a 30-day roll-up. Both ask "what happened with these?" with one-tap answers.
+```bash
+./jobradar linkedin
+```
 
-## Email users: no inbox clutter
+It asks for the mailbox your alerts go to and an **app password** (Gmail: [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords), needs 2-step verification), tests the login, and switches it on. Your existing alerts need nothing else. `./jobradar linkedin off` stops it. How it works: [LinkedIn alerts](#linkedin-alerts-without-scraping).
 
-JobRadar sends to your plus-address (`you+jobradar@gmail.com`). The setup writes a `gmail-filter.xml`; import it once (Gmail → Settings → Filters → Import) and every JobRadar email skips your inbox and lands under a **JobRadar** label. Turn on notifications for that label in the Gmail app so matches still reach your phone.
+---
 
-## Change anything by chatting: `./jobradar chat`
+## How it works
 
-After setup you never need the terminal or a text editor. Open the chat page (`./jobradar chat`, or bookmark the link it prints; sign in with your local n8n login) and say what you want, in your own words:
+```mermaid
+flowchart LR
+  A[Company job boards<br/>every 15 min] --> D
+  B[Remote job boards<br/>every 15 min] --> D
+  C[LinkedIn alert emails<br/>as they arrive] --> L[Find the posting on<br/>the company's own board] --> D
+  D[Rules: titles, languages,<br/>duplicates, age<br/><i>no AI cost</i>] --> E[Claude Haiku screens:<br/>location, language, pay,<br/>skills fit, values fit]
+  E -->|strong match or dream company| F[Claude Sonnet tailors<br/>resume + cover letter]
+  E -->|plausible| G[Daily 'worth a look' list]
+  E -->|no fit| X[Dropped]
+  F --> H[Guardrails in code:<br/>no invented numbers or claims]
+  H --> I[Card + Word files<br/>Telegram / email]
+```
 
-- "watch Supabase as a dream company" · "stop watching Deel"
-- "only ping me for scores above 70" · "quiet hours from 23:00" · "turn off Remotive"
-- "I won't take roles that need 5 years of enterprise sales" · "I'm fine with hybrid in Vienna"
-- "remember: I ran partner payouts every month" · "never say 'a few partners'" · "interview me"
-- "why was it quiet today?" — real numbers from the last runs, and any broken source
-- paste a job link — screened right away, tailored, and sent as a normal card (even if your filters would skip it, with the reason)
-
-It shows every change before → after and saves only when you say **yes** (a backup of the old file is kept). It runs on your own Claude key (a cent or two per message), only you can open it, and it never applies or messages anyone for you. Prefer voice? The deeper [interview](onboarding/README.md) runs in the Claude app.
-
-## Make it yours by hand: `settings.json`
-
-Everything about *what* to find and *how* to notify lives in one file. Highlights (full reference: [docs/SETTINGS.md](docs/SETTINGS.md)):
-
-- `companies` — career-page links (`https://jobs.ashbyhq.com/n8n`), or just a name (`{ "name": "PetsApp" }`) to spot a company on every job board when its own careers page isn't supported. `"dream": true` = lower bar, every non-excluded role gets screened, always tailored. Or run `./jobradar companies`.
-- `scoring.minSkillsFit` / `minValuesFit` / `instantAt` — a role appears when both skills and values fit are ≥ 50; ≥ 75 (or a dream company) gets tailored files right away, the rest go into one daily "worth a look" list.
-- `notifications.style` — `compact` (default) or `detailed`.
-- `notifications.files` — `["docx"]`, `["pdf"]` or both.
-- `notifications.delivery` — `instant` (default) or `digest` (one summary a day).
-- `notifications.quietHours` — Telegram arrives silently at night.
-- `notifications.buttons` — which buttons you want on each card. To get fewer pings, raise `scoring.instantAt`.
-- `filters` — job titles to keep or drop, languages you don't speak.
-- `reports` — weekly day/time, monthly roll-up.
-- `replyDetection.enabled` — email users: JobRadar reads only new mail that mentions a company you applied to, and Claude labels it reply / rejection / interview.
-- `guardrails.neverClaim` — things that must never appear in your resume (it warns you if they do).
-
-Changes apply on the next run. Keys and channels live in `.env` (`./jobradar setup` again, or edit and `./jobradar restart`).
-
-## Where jobs come from
+### Where jobs come from
 
 | Source | How | Speed |
 |---|---|---|
@@ -108,23 +104,102 @@ Changes apply on the next run. Keys and channels live in `.env` (`./jobradar set
 | Companies without a supported careers page | watched by name across every board below | as fast as the board |
 | We Work Remotely, Remotive, RemoteOK, Jobicy, Himalayas | public feeds | minutes to hours |
 | Hiring Cafe | the community [Hiring Cafe MCP server](https://hiringcafe-mcp.vercel.app/) (unofficial), or an Apify task | hourly |
-| LinkedIn job alerts (optional, `./jobradar linkedin`) | your own LinkedIn alert **emails**, read from your inbox the moment they arrive (left unread). Each job is looked up on the company's own public job board → full screening + tailored files; if it isn't there, a title-only card links to LinkedIn. LinkedIn pages are **never** opened or scraped. | as often as LinkedIn emails you |
+| LinkedIn job alerts (optional) | your own alert **emails**, read from your inbox (left unread) | as often as LinkedIn emails you |
 
-## How it decides (and why you can trust the drafts)
+### How it decides
 
-1. Rules first (titles, languages, freshness, duplicates) — no AI cost.
-2. **Claude Haiku** screens what's left against your search profile: can they hire you where you live, is it English-only, does pay clear your floor — then two scores: **skills fit** and **values fit** (how well the company matches what you said you value).
-3. Both ≥ 50 → it appears. Strong matches (≥ 75) and dream companies get **Claude Sonnet** tailoring right away; the rest land in one daily **"worth a look"** list, so you see everything plausible without a dozen pings a day.
-4. **Discovery:** companies that keep matching your values but aren't on your list show up in your Monday report with a ➕ button. One tap and their roles get priority.
-5. **Guardrails in plain code** check the result: any number not in your files, anything on your never-claim list, a missing section or changed contact details → a ⚠️ line on the card.
+1. **Rules first, no AI cost:** job titles you want or don't, languages you don't speak, jobs you've already seen, and postings older than 3 days (`filters.freshHours`).
+2. **Claude Haiku screens** what's left against your search profile: can they hire you where you live, does it work in English, does pay clear your floor. Then two scores: **skills fit** and **values fit** (how well the company matches what you said you value), plus an overall score out of 100.
+3. **Three outcomes:**
+   - Both fits ≥ 50 and overall ≥ 75 (`scoring.instantAt`), or a **dream company**: **Claude Sonnet** tailors your files and you get a card right away.
+   - Both fits ≥ 50 but overall lower: one line in the next daily **"worth a look"** list (08:00 by default), no tailoring, no ping.
+   - Anything else: dropped.
+4. **Guardrails in plain code** check every tailored file: any number not in your files, anything on your never-claim list, a missing section or changed contact details → a ⚠️ line on the card. A **"What changed"** file shows exactly what was edited versus your base resume.
+5. **Discovery:** companies that keep matching your values but aren't on your list show up in your Monday report with a ➕ button.
 6. If Claude is down or out of credit, you still get the job, marked as not screened, with your base files.
+
+### Dream companies, reposts and relocation
+
+- **Dream companies** (`"dream": true`) get a lower bar: every role that isn't excluded by title is screened, and every match is tailored and sent right away.
+- **Reposts:** companies often repost a role under a new ID, or keep the old date. A dream-company role you never got a card for comes through again, whatever its date says. Roles you already got a card for never repeat.
+- **Relocation:** if you'd move for a company (say it sponsors visas), add `"relocateTo": ["United Kingdom", "Ireland"]` to it. Roles based there count as hireable for that company only, and its open roles get one fresh look.
+
+### LinkedIn alerts without scraping
+
+JobRadar never opens LinkedIn. It reads LinkedIn's alert **emails** in your inbox the moment they arrive, leaves them unread, and for each job in the email:
+
+1. looks for the same posting on the company's own job board (one you watch, one it found before, or a guess at their public Ashby, Greenhouse or Lever board);
+2. **found:** full screening on the real job description, tailored files, a normal card, even if the posting looks old;
+3. **not found:** it's judged on title, company and location only. LinkedIn's location is taken literally: "London (Remote)" means remote within the UK. A strong match gets a **title-only card** with an "Open on LinkedIn" button, nothing tailored; a plausible one goes to the daily list.
+
+A job you already got a card for never comes through twice, whichever source it comes from. If LinkedIn changes its email format and JobRadar can't read an alert, you get a heads-up the same day.
+
+Good to know: each LinkedIn alert email lists LinkedIn's top 6 jobs, even when the subject says "…and 39 others". And LinkedIn only knows jobs posted on LinkedIn: some companies (n8n, for example) don't list there, which is why their own job board is the main source.
+
+---
+
+## How to use it
+
+### Every day
+
+- A card arrives. Read the ⚠️ lines and the "What changed" line, open the Word files, fix anything, then tap **🚀 Apply**.
+- Tap **✅ Applied** or **⏭ Skip** so your stats stay honest. (Email: the buttons open a pre-filled email; just hit send.)
+- Tap the **👤 named contact**, **🔎 Recruiters** or **🔎 Hiring team**, and **📋 Copy LinkedIn note** to reach a human the same day.
+- Each morning: the **"worth a look"** list with plausible roles that weren't strong enough for a ping.
+- **Every Monday:** a report with what was found, what you applied to, responses, rejections, intro calls and how fast you were. On the 1st of each month, a 30-day roll-up. Both ask "what happened with these?" with one-tap answers.
+
+### Change anything by chatting: `./jobradar chat`
+
+After setup you don't need the terminal or a text editor. Open the chat page (`./jobradar chat`, or bookmark the link it prints; sign in with your local n8n login) and say what you want, in your own words:
+
+- "watch Supabase as a dream company" · "stop watching Deel"
+- "only ping me for scores above 70" · "no notifications between 23:00 and 07:00" · "turn off Remotive"
+- "I'd relocate to the UK or Ireland for Anthropic, they sponsor visas"
+- "I won't take roles that need 5 years of enterprise sales" · "I'm fine with hybrid in Vienna"
+- "remember: I ran partner payouts every month" · "never say 'a few partners'" · "interview me"
+- "why was it quiet today?": real numbers from the last runs, and any broken source
+- paste a job link: screened right away, tailored, and sent as a normal card (even if your filters would skip it, with the reason)
+
+It shows every change before → after and saves only when you say **yes** (a backup of the old file is kept). It runs on your own Claude key (a cent or two per message), only you can open it, and it never applies or messages anyone for you.
+
+### Quiet nights
+
+`notifications.quietHours` with `"pause": true` (or tell the chat "no notifications between 23:00 and 07:00"): the radar doesn't run in that window, so you get no messages at night. LinkedIn alert jobs that arrive meanwhile wait and are checked first thing after; at most 4 tailored cards go out per run, so mornings don't start with a wall of cards. Runs you start yourself still go through. Without `pause`, Telegram simply arrives silently in that window.
+
+### Settings by hand: `settings.json`
+
+Everything about *what* to find and *how* to notify lives in one file. Changes apply on the next run. Highlights (full reference: [docs/SETTINGS.md](docs/SETTINGS.md)):
+
+- `companies`: career-page links (`https://jobs.ashbyhq.com/n8n`), or just a name (`{ "name": "PetsApp" }`) to spot a company on every job board. `"dream": true` for dream companies, `"relocateTo": [...]` for companies you'd move for. Or run `./jobradar companies`.
+- `scoring.minSkillsFit` / `minValuesFit` / `instantAt`: when a role appears at all (both fits ≥ 50) and when it's worth a ping (≥ 75). To get fewer pings, raise `instantAt`.
+- `filters`: job titles to keep or drop, languages you don't speak, how old a posting may be.
+- `notifications`: `style` (`compact` or `detailed`), `files` (`docx`, `pdf` or both), `delivery` (`instant` or one `digest` a day), `quietHours`, `buttons`.
+- `reports`: weekly day/time, monthly roll-up.
+- `replyDetection.enabled`: email users only. JobRadar reads new mail that mentions a company you applied to, and Claude labels it reply / rejection / interview.
+- `guardrails.neverClaim`: things that must never appear in your resume (it warns you if they do).
+
+Keys and channels live in `.env` (run `./jobradar setup` again, or edit it and `./jobradar restart`).
+
+### Email users: no inbox clutter
+
+JobRadar sends to your plus-address (`you+jobradar@gmail.com`). The setup writes a `gmail-filter.xml`; import it once (Gmail → Settings → Filters → Import) and every JobRadar email skips your inbox and lands under a **JobRadar** label. Turn on notifications for that label in the Gmail app so matches still reach your phone.
+
+### Editing the files yourself
+
+Every job gets a folder in `output/` with the Word/PDF files plus editable `resume.md` and `cover_letter.md`. Edit those, then `./jobradar rerender <folder>` to rebuild the files.
+
+### Keeping it running
+
+It runs while your computer is awake and Docker is open. On a Mac, keep it plugged in with "Prevent automatic sleeping when the display is off". For true 24/7, put the same folder on a small Linux server (~€4/month) and run `./jobradar setup` there.
+
+---
 
 ## Commands
 
 ```
 ./jobradar setup        first-time setup (safe to re-run to change anything)
-./jobradar linkedin     also read your LinkedIn job-alert emails (needs an email app password); "linkedin off" to stop
 ./jobradar chat         change anything in plain words (opens the chat page)
+./jobradar linkedin     also read your LinkedIn job-alert emails (needs an email app password); "linkedin off" to stop
 ./jobradar run          check the job boards right now
 ./jobradar companies    add companies (paste career-page links)
 ./jobradar import-cv    import a CV (PDF) → honest review + your candidate files
@@ -137,28 +212,25 @@ Changes apply on the next run. Keys and channels live in `.env` (`./jobradar set
 
 Inside n8n (http://localhost:5678) you'll find eight workflows (one is the chat, one reads LinkedIn alerts if you switch it on) and two tables: **jobradar_jobs** (your application tracker) and **jobradar_watch** (companies you added with ➕), both viewable and editable there.
 
-## Running 24/7
+## Troubleshooting
 
-It runs while your computer is awake and Docker is open. On a Mac, keep it plugged in with "Prevent automatic sleeping when the display is off". For true 24/7, put the same folder on a small Linux server (~€4/month) and run `./jobradar setup` there.
+- **Nothing arrives:** ask the chat "why so quiet?", or check n8n → Executions. The first run only sends jobs from the last 7 days; later runs only *new* jobs. With a night pause on, nothing runs in that window.
+- **🩺 source alert:** a company link moved or a board changed. Fix it in the chat or in `settings.json`.
+- **Claude 401/credit errors:** check the key and credit at platform.claude.com, then `./jobradar restart`.
+- **Telegram "chat not found":** send your bot a message, run `./jobradar setup` again.
+- **Gmail login fails (email or LinkedIn alerts):** you need an *app password* (2-step verification on), not your normal password.
+- **"Couldn't read a LinkedIn alert":** LinkedIn changed its email format. Everything else keeps working; open an issue with the alert attached (remove your name first).
 
 ## Privacy
 
-Everything runs on your machine. Your files, tracker and keys never leave it, except the job text and your profile sent to Claude for screening/tailoring, and the notifications you chose. `candidate/`, `settings.json`, `.env` and `output/` are git-ignored.
-
-## Troubleshooting
-
-- **Nothing arrives:** n8n → Executions shows each run. The first run only sends jobs from the last 7 days; later runs only *new* jobs.
-- **🩺 source alert:** a company link moved or the board changed. Fix it in `settings.json`.
-- **Claude 401/credit errors:** check the key and credit at platform.claude.com, then `./jobradar restart`.
-- **Telegram "chat not found":** send your bot a message, run `./jobradar setup` again.
-- **Gmail login fails:** you need an *app password* (2-step verification on), not your normal password.
+Everything runs on your machine. Your files, tracker and keys never leave it, except the job text and your profile sent to Claude for screening and tailoring, and the notifications you chose. LinkedIn alerts are read over IMAP from your own mailbox and left unread; nothing else in your inbox is processed (reply detection is a separate opt-in). `candidate/`, `settings.json`, `.env` and `output/` are git-ignored.
 
 ## For developers
 
-- Workflow logic lives in `src/` (`lib/` shared helpers, `wf/` one block per n8n Code node) and is compiled into `workflows/*.json` by `node build/build.js`.
-- `node test/unit.js` — adapters, filters, guardrails, notifications, email/reply/digest logic.
-- `N8N_BIN=/path/to/n8n bash test/e2e.sh` — boots a real n8n, imports all workflows, runs search → notify → button presses → weekly report against mock boards, Claude, Telegram and SMTP; the renderer makes real Word files. `E2E_CANDIDATE=examples/candidate E2E_SETTINGS=$PWD/examples/settings.json E2E_EXPECT=1` runs the same as a fictional backend engineer.
-- `N8N_BIN=/path/to/n8n bash test/setup-wizard.sh` — runs the real `./jobradar setup` as a brand-new user from a clean checkout (bad key, Telegram, CV import, company links, first-run preview), with `test/fake-docker` standing in for containers.
+- Workflow logic lives in `src/` (`lib/` shared helpers, `wf/` one block per n8n Code node) and is compiled into `workflows/*.json` by `node build/build.js`. Never hand-edit `workflows/*.json`.
+- `node test/unit.js`: adapters, filters, guardrails, notifications, LinkedIn parsing (fixtures shaped like real alert emails), reposts, relocation, night pause, chat, email/reply/digest logic.
+- `N8N_BIN=/path/to/n8n bash test/e2e.sh`: boots a real n8n, imports all workflows, runs search → notify → button presses → weekly report → chat → a LinkedIn alert batch against mock boards, Claude, Telegram and SMTP; the renderer makes real Word files. `E2E_CANDIDATE=examples/candidate E2E_SETTINGS=$PWD/examples/settings.json E2E_EXPECT=1` runs the same as a fictional backend engineer.
+- `N8N_BIN=/path/to/n8n bash test/setup-wizard.sh`: runs the real `./jobradar setup` as a brand-new user from a clean checkout, with `test/fake-docker` standing in for containers.
 - Architecture notes: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## License
