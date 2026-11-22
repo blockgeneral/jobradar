@@ -3,3 +3,4 @@
 *.docx binary
 *.pdf binary
 *.png binary
+test/fixtures/linkedin-alert.* -text
