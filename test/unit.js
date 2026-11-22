@@ -3,7 +3,7 @@
 const fs = require('fs'); const path = require('path'); const assert = require('assert');
 const ROOT = path.join(__dirname, '..');
 const libSrc = ['util', 'sources', 'prompts', 'guard', 'notify'].map((n) => fs.readFileSync(path.join(ROOT, 'src/lib', n + '.js'), 'utf8')).join('\n');
-const L = new Function('$env', libSrc + '; return { normalize, watchList, normName, preFilter, checkTailoring, keywordCoverage, toIso, detectAts, companiesFromSettings, buildRequests, parseBody, telegramCard, emailForJob, computeReport, telegramReport, inQuietHours, shortHash, fillCoverLetter, countryLock, claimCheck, contactLinks, resumeDiff, changesDoc, manualRequests, pickManual, parseLinkedInAlert, matchLead, lightJob, leadRequests, lightCard };')({ NOTIFY_CHANNELS: 'telegram,email' });
+const L = new Function('$env', libSrc + '; return { normalize, watchList, normName, preFilter, checkTailoring, keywordCoverage, toIso, detectAts, companiesFromSettings, buildRequests, parseBody, telegramCard, emailForJob, computeReport, telegramReport, inQuietHours, shortHash, fillCoverLetter, countryLock, claimCheck, contactLinks, resumeDiff, changesDoc, manualRequests, pickManual, relocateCovers, scoreRequest, parseLinkedInAlert, matchLead, lightJob, leadRequests, lightCard };')({ NOTIFY_CHANNELS: 'telegram,email' });
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('  ✔ ' + name); };
 const now = Date.now();
 
@@ -11,10 +11,11 @@ const now = Date.now();
 function nodeBlocks(file) { const o = {}; for (const c of fs.readFileSync(path.join(ROOT, 'src/wf', file), 'utf8').split(/^\/\/@node\s+/m).slice(1)) o[c.split('\n')[0].trim()] = c.split('\n').slice(1).join('\n'); return o; }
 const OTH = nodeBlocks('others.js');
 const RAD = nodeBlocks('radar.js');
-async function runNode(code, { input = [], nodes = {}, env = {}, state = {} }) {
+async function runNode(code, { input = [], nodes = {}, env = {}, state = {}, items = null, helpers = {} }) {
   const fn = new Function('$input', '$', '$env', '$getWorkflowStaticData', '$execution', `return (async function(){\n${code}\n${libSrc}\n}).call(this)`);
   const $ = (name) => { if (!(name in nodes)) throw new Error('node not executed: ' + name); const items = nodes[name].map((j) => ({ json: j })); return { all: () => items, first: () => items[0] }; };
-  return fn.call({ helpers: {} }, { all: () => input.map((j) => ({ json: j })), first: () => ({ json: input[0] }) }, $, env, () => state, { id: 'test' });
+  const inp = items || input.map((j) => ({ json: j }));
+  return fn.call({ helpers }, { all: () => inp, first: () => inp[0] }, $, env, () => state, { id: 'test' });
 }
 
 (async () => {
@@ -413,6 +414,48 @@ Unsubscribe: https://www.linkedin.com/comm/psettings/email-unsubscribe?x`;
   const bad2 = await runNode(OTH.linkedin_parse, { input: [{ date: new Date().toUTCString(), subject: 'Account Executive at Acme and 9 more jobs', textPlain: 'x' }], state: st2 });
   const bad3 = await runNode(OTH.linkedin_parse, { input: [{ date: new Date().toUTCString(), from: { value: [{ address: 'jobalerts-noreply@linkedin.com', name: 'LinkedIn Job Alerts' }] }, subject: 'Grafana Labs is hiring: Major Account Executive', textPlain: 'x' }], state: {} });
   t('💼 an alert it can\'t read → a heads-up the same day, once a day (any subject from the alert sender)', () => { assert.ok(bad.some((x) => x.json.kind === 'tg_text' && /LinkedIn alert/.test(x.json.tg.text))); assert.equal(bad2.length, 0); assert.ok(bad3.length); });
+}
+
+// ✈️ companies you'd relocate for + 🌙 night pause
+{
+  const D = 864e5;
+  t('✈️ relocateTo understands country names', () => {
+    assert.ok(L.relocateCovers(['United Kingdom', 'Ireland'], 'UK')); assert.ok(L.relocateCovers(['UK'], 'England')); assert.ok(L.relocateCovers(['Ireland'], 'ireland'));
+    assert.ok(!L.relocateCovers(['Ireland'], 'UK')); assert.ok(!L.relocateCovers(null, 'UK'));
+  });
+  t('✈️ the screener is told you\'d relocate (and the UK-only check stays quiet)', () => {
+    const job = { company: 'Anthropic', title: 'Account Executive', location: 'London, UK', description: 'Must have the right to work in the UK.', dream: true, relocateTo: ['United Kingdom', 'Ireland'], sourceLabel: 'Greenhouse' };
+    const u = JSON.stringify(L.scoreRequest(job, '# Who\nAE in Vienna, Austria', '# Sam', 'm'));
+    assert.ok(/will relocate to United Kingdom, Ireland/.test(u) && /sponsors visas/.test(u) && !/reads UK-only/.test(u), u.slice(0, 400));
+    const plain = JSON.stringify(L.scoreRequest(Object.assign({}, job, { relocateTo: null }), '# Who\nAE in Vienna, Austria', '# Sam', 'm'));
+    assert.ok(/reads UK-only/.test(plain) && !/will relocate/.test(plain));
+  });
+  const cfg = (reloc) => ({ companies: [{ name: 'Anthropic', url: 'https://job-boards.greenhouse.io/anthropic', dream: true, relocateTo: reloc }], filters: {}, scoring: {} });
+  const plan = (reloc) => [{ source: 'greenhouse', company: 'Anthropic', slug: 'anthropic', dream: true, _candidate: { files: { 'search_profile.md': 'p', 'resume_base.md': '# Sam\n' }, settings: cfg(reloc), manualUrl: '' } }];
+  const gh = { data: JSON.stringify({ jobs: [{ id: 77, title: 'Account Executive, Dublin', location: { name: 'Dublin, IE' }, absolute_url: 'https://job-boards.greenhouse.io/anthropic/jobs/77', first_published: new Date(now - 20 * D).toISOString(), content: 'Sell Claude' }] }) };
+  const st = { initialized: true, seen: { 'greenhouse:anthropic:77': now - 10 * D }, judged: { 'greenhouse:anthropic:77': now - 10 * D }, judgedBefore: now - 30 * D };
+  let out = await runNode(RAD.normalize, { input: [], state: st, nodes: { '⚙️ Plan run': plan(null), '🌐 Fetch job sources': [gh], '🗃️ Already sent': [] } });
+  t('✈️ without relocation: a judged Dublin role stays judged', () => assert.equal(out.length, 0));
+  out = await runNode(RAD.normalize, { input: [], state: st, nodes: { '⚙️ Plan run': plan(['United Kingdom', 'Ireland']), '🌐 Fetch job sources': [gh], '🗃️ Already sent': [] } });
+  t('✈️ adding relocateTo gives that company\'s open roles one fresh look', () => { assert.equal(out.length, 1); assert.deepEqual(out[0].json.job.relocateTo, ['United Kingdom', 'Ireland']); });
+  out = await runNode(RAD.normalize, { input: [], state: st, nodes: { '⚙️ Plan run': plan(['United Kingdom', 'Ireland']), '🌐 Fetch job sources': [gh], '🗃️ Already sent': [] } });
+  t('✈️ …once', () => assert.equal(out.length, 0));
+
+  // 🌙 night pause in ⚙️ Plan run
+  const files = { 'settings.json': JSON.stringify({ companies: [], boards: { weworkremotely: false, remotive: false, remoteok: false, jobicy: false, himalayas: false }, notifications: { quietHours: { from: '00:00', to: '23:59', pause: true } } }), 'resume_base.md': '# Sam', 'cover_letter_base.md': 'x', 'search_profile.md': 'p' };
+  const items = Object.keys(files).map((f) => ({ json: {}, binary: { data: { fileName: f } } }));
+  const helpers = { getBinaryDataBuffer: async (i) => Buffer.from(files[Object.keys(files)[i]]) };
+  const st2 = {};
+  const lead = { id: '9', title: 'Account Executive', company: 'Acme', location: 'Remote' };
+  let r = await runNode(RAD.plan_run, { items, helpers, state: st2, nodes: { '🔗 Run from CLI': [{ body: { leads: [lead] } }] } });
+  t('🌙 during the pause: LinkedIn jobs wait, nothing runs', () => { assert.equal(r.length, 0); assert.equal(st2.pendingLeads.length, 1); });
+  r = await runNode(RAD.plan_run, { items, helpers, state: st2, nodes: { '⏰ Every 15 minutes': [{}] } });
+  t('🌙 scheduled runs do nothing during the pause', () => assert.equal(r.length, 0));
+  r = await runNode(RAD.plan_run, { items, helpers, state: st2, nodes: { '🔗 Run from CLI': [{ body: {} }] } });
+  t('🌙 a run you start yourself still goes through', () => assert.ok(r.length >= 1));
+  files['settings.json'] = JSON.stringify(Object.assign(JSON.parse(files['settings.json']), { notifications: { quietHours: { from: String((new Date().getUTCHours() + 2) % 24).padStart(2, '0') + ':00', to: String((new Date().getUTCHours() + 3) % 24).padStart(2, '0') + ':00', pause: true } } }));
+  r = await runNode(RAD.plan_run, { items, helpers, state: st2, nodes: { '⏰ Every 15 minutes': [{}] }, env: { GENERIC_TIMEZONE: 'UTC' } });
+  t('🌙 first scheduled run after the pause checks the waiting LinkedIn jobs', () => { assert.ok(r.length >= 1); assert.equal(r[0].json._candidate.leads.length, 1); assert.equal(st2.pendingLeads.length, 0); });
 }
 
 // 💬 chat: staged edits, saved only after the user's own "yes"

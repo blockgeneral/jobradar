@@ -116,6 +116,15 @@ function trackerRow(job, fit, extra) {
   }, extra || {});
 }
 
+// Companies you'd relocate for: settings.companies[].relocateTo = ["United Kingdom", "Ireland"]. Does that cover a country?
+function relocateCovers(relocateTo, country) {
+  if (!Array.isArray(relocateTo) || !country) return false;
+  const alias = { uk: 'united kingdom|uk|england|scotland|wales|britain|great britain', us: 'united states|usa|us|u\\.s\\.', ie: 'ireland|irish' };
+  const norm = (s) => String(s).toLowerCase().trim();
+  const group = (s) => { const n = norm(s); for (const g of Object.values(alias)) if (new RegExp('^(' + g + ')$').test(n)) return g; return n; };
+  return relocateTo.some((r) => group(r) === group(country));
+}
+
 // Postings that only hire in one country, whatever the board's location label says.
 // Returns { country, evidence } or null. Conservative: needs an explicit signal, not just a US city.
 function countryLock(text, profileMd) {

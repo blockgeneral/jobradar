@@ -20,6 +20,19 @@ try {
   manualUrl = typeof b.url === 'string' ? b.url.trim() : '';
   if (Array.isArray(b.leads)) leads = b.leads.filter((l) => l && l.id && l.title && l.company).slice(0, 60);
 } catch (e) { /* not started from the webhook */ }
+// Night pause (notifications.quietHours with "pause": true): scheduled runs do nothing — no AI calls, no messages.
+// LinkedIn alert jobs that arrive meanwhile wait and are checked on the first run after the pause.
+// Runs you start yourself (./jobradar run, a pasted link) still go through.
+const state0 = $getWorkflowStaticData('global');
+let scheduled = false;
+try { scheduled = $('⏰ Every 15 minutes').all().length > 0; } catch (e) { /* not started by the schedule */ }
+const qh = (settings.notifications || {}).quietHours || {};
+const paused = qh.pause === true && (scheduled || leads) && !manualUrl && inQuietHours(qh, envGet('GENERIC_TIMEZONE'), Date.now());
+if (paused) {
+  if (leads && leads.length) state0.pendingLeads = (state0.pendingLeads || []).concat(leads).slice(-150);
+  return [];
+}
+if (!leads && !manualUrl && scheduled && (state0.pendingLeads || []).length) { leads = state0.pendingLeads; state0.pendingLeads = []; }
 let reqs;
 if (leads) {
   // LinkedIn alert jobs: skip the ones already handled, and the ones your title/location filters drop anyway
@@ -147,9 +160,23 @@ if (manualUrl) {
   jobs = one ? [Object.assign(one, { manual: true })] : [];
   if (!one) await postStatus(this.helpers, 'gate', { run: $execution.id, manualUrl, manual: { found: false, note: "couldn't find that posting on its job board or read the page — it may be closed, or the page needs a login" } });
 }
-for (const j of jobs) { const w = watched[normName(j.company)]; if (w) { j.watched = true; if (w.dream) j.dream = true; } }
+for (const j of jobs) { const w = watched[normName(j.company)]; if (w) { j.watched = true; if (w.dream) j.dream = true; if (w.relocateTo) j.relocateTo = w.relocateTo; } }
 const stats = { fetched: jobs.length };
 if (leads) { stats.linkedin = leads.length; stats.linkedinMatched = jobs.filter((j) => j.viaLinkedIn).length; }
+// You just said you'd relocate for a company: its open roles get one fresh look under the new location rule
+// (jobs you already got a card for still never repeat).
+state.relocateKey = state.relocateKey || {};
+for (const c of companiesFromSettings(settings).companies) {
+  const key = c.relocateTo ? JSON.stringify(c.relocateTo) : '';
+  const n = normName(c.name);
+  if ((state.relocateKey[n] || '') === key) continue;
+  state.relocateKey[n] = key;
+  if (!key || !state.initialized) continue;
+  const alt = 'alt:' + String(c.name).toLowerCase().replace(/[^a-z0-9|]+/g, ' ').trim() + '|';
+  for (const k of Object.keys(state.seen)) if (k.includes(':' + c.slug + ':') || k.startsWith(alt)) delete state.seen[k];
+  for (const k of Object.keys(state.judged)) if (k.includes(':' + c.slug + ':')) delete state.judged[k];
+  stats.recheck = (stats.recheck || 0) + 1;
+}
 const passed = [];
 const batch = new Set();
 const mark = (j) => { state.seen[j.uid] = now; state.seen['alt:' + j.altKey] = now; if (j.leadId) state.seen['linkedin:' + j.leadId] = now; };
@@ -225,7 +252,7 @@ for (let i = 0; i < resp.length; i++) {
   // Safety net: the board said "anywhere" but the text says one country — never let that pass as a clean "yes".
   const lock = countryLock(job.description, files['search_profile.md']);
   const lockWarn = [];
-  if (lock && fit.location_eligible === 'yes') {
+  if (lock && fit.location_eligible === 'yes' && !relocateCovers(job.relocateTo, lock.country)) {
     fit.location_eligible = 'unclear';
     lockWarn.push(`Location: posting reads ${lock.country}-only (${lock.evidence}), though the board says "${job.location || 'remote'}". Check before applying.`);
   }

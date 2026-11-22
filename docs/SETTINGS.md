@@ -4,7 +4,7 @@ Changes apply on the next run (every 15 minutes, or `./jobradar run`). Secrets a
 
 | Key | Default | What it does |
 |---|---|---|
-| `companies` | — | Career-page links (a string, or `{ "url": "...", "name": "...", "dream": true, "enabled": false }`), or a name only (`{ "name": "PetsApp", "aliases": ["PetsApp Ltd"] }`) to recognise that company on every job board. Polled directly: Ashby, Greenhouse, Lever (incl. EU), Workable, Recruitee, Personio, SmartRecruiters, Pinpoint. Companies added with ➕ live in the `jobradar_watch` table. |
+| `companies` | — | Career-page links (a string, or `{ "url": "...", "name": "...", "dream": true, "enabled": false }`), or a name only (`{ "name": "PetsApp", "aliases": ["PetsApp Ltd"] }`) to recognise that company on every job board. Polled directly: Ashby, Greenhouse, Lever (incl. EU), Workable, Recruitee, Personio, SmartRecruiters, Pinpoint. Companies added with ➕ live in the `jobradar_watch` table. Add `"relocateTo": ["United Kingdom", "Ireland"]` for a company you'd move for (e.g. it sponsors visas): roles based there count as hireable, and its open roles get one fresh look. |
 | `boards.weworkremotely` | `true` | `true` (sales), `false`, or a WWR category slug, e.g. `remote-back-end-programming-jobs`, `remote-design-jobs`. |
 | `boards.remotive` | `true` | `true` (sales-business), `false`, or a Remotive category: `software-dev`, `design`, `product`, `customer-support`, `marketing`, … |
 | `boards.remoteok` | `true` | `true` (sales), `false`, or a RemoteOK tag: `backend`, `design`, `marketing`, … |
@@ -24,7 +24,7 @@ Changes apply on the next run (every 15 minutes, or `./jobradar run`). Secrets a
 | `notifications.delivery` | `instant` | `instant`, or `digest` (everything in one summary at `digestTime`; files stay in `output/`). The "worth a look" list is sent at `digestTime` either way. |
 | `notifications.style` | `compact` | `compact` = role, score, why, what to check. `detailed` adds gaps, ATS keywords, what changed. |
 | `notifications.files` | `["docx"]` | Any of `docx`, `pdf`. |
-| `notifications.quietHours` | `22:30–07:30` | Telegram arrives silently in this window (your `TIMEZONE`). |
+| `notifications.quietHours` | `22:30–07:30` | Telegram arrives silently in this window (your `TIMEZONE`). Add `"pause": true` to stop the radar in this window instead: no AI cost, no messages; LinkedIn alert jobs wait and are checked on the first run after it. Runs you start yourself still go through. |
 | `notifications.buttons` | all on | `linkedinSearch`, `copyOutreachNote`, `statusButtons`. |
 | `reports` | Monday 08:30 + monthly | `weekly`, `weeklyDay`, `time`, `monthly`, `checkInAfterDays` (ask about outcomes after N days), `ghostedAfterDays`. |
 | `replyDetection.enabled` | `false` | Email users: read new inbox mail that mentions a company you applied to and label it with Claude. Re-run `./jobradar setup` after switching on. |

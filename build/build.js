@@ -123,7 +123,7 @@ const radar = workflow('JobRadarMain0001', 'JobRadar · 1 Radar (every 15 min)',
   a.node('▶️ Run now', 'n8n-nodes-base.manualTrigger', 1, [0, 200], {});
   hook(a, '🔗 Run from CLI', [0, 400], 'jobradar-run');
   readFiles(a, '📂 Read settings + candidate', [240, 100], '/{settings.json,candidate/*.md}');
-  a.code('⚙️ Plan run', [480, 100], R.plan_run, ['util', 'sources'], 'Which job boards to check (or where to find LinkedIn alert jobs)');
+  a.code('⚙️ Plan run', [480, 100], R.plan_run, ['util', 'sources', 'notify'], 'Which job boards to check (or where to find LinkedIn alert jobs)');
   a.http('🌐 Fetch job sources', [720, 100], {
     method: '={{ $json.method || "GET" }}', url: '={{ $json.url }}',
     sendHeaders: true, headerParameters: { parameters: [

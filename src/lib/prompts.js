@@ -76,12 +76,15 @@ function scoreTool() { return {
 }; }
 
 function scoreRequest(job, profileMd, resumeMd, model) {
-  const lock = countryLock(job.description, profileMd);
-  const hint = lock ? `\n\nAutomatic check: this posting reads ${lock.country}-only (${lock.evidence}). Treat it as limited to that country unless the text clearly says otherwise.` : '';
+  const reloc = Array.isArray(job.relocateTo) && job.relocateTo.length ? job.relocateTo : null;
+  const lock0 = countryLock(job.description, profileMd);
+  const lock = lock0 && !relocateCovers(reloc, lock0.country) ? lock0 : null;
+  const hint = (lock ? `\n\nAutomatic check: this posting reads ${lock.country}-only (${lock.evidence}). Treat it as limited to that country unless the text clearly says otherwise.` : '')
+    + (reloc ? `\n\nException to the candidate's location rule for this company: they will relocate to ${reloc.join(', ')} for it (the company sponsors visas). A role based in, or remote within, ${reloc.join(' or ')} counts as location_eligible "yes" unless the posting rules out visa sponsorship or relocation.` : '');
   const system = `You screen job postings for one specific candidate. You are strict and honest: a wasted application costs them time, a missed good one costs them more. Judge only from the posting text and the candidate files. Never assume facts that are not written.
 
 Location: the job board's location label is often wrong (boards tag US-only roles "Anywhere in the World"). Decide location_eligible from the posting text itself. When the text limits hiring to one country, the role is limited to that country whatever the label says. Signals: pay ranges or pay zones only for one country's cities or regions, country-specific benefits (401(k), US health plans), "must be authorized to work in", "must reside in", or an office/time-zone requirement the candidate cannot meet.${hint}`;
-  const user = `<candidate_search_profile>\n${stripHtmlComments(profileMd)}\n</candidate_search_profile>\n\n<candidate_resume>\n${stripHtmlComments(resumeMd)}\n</candidate_resume>\n\n<job>\nCompany: ${job.company}\nTitle: ${job.title}\nLocation (job board's label, often wrong): ${job.location || 'not stated'}\nWorkplace: ${job.workplaceType || (job.remote ? 'remote' : 'not stated')}\nSalary: ${job.salary || 'not stated'}\nSource: ${job.sourceLabel}\nTarget/dream company: ${job.dream ? 'yes' : 'no'}\n\n${truncate(job.description, 9000)}\n</job>\n\nAssess this posting.`;
+  const user = `<candidate_search_profile>\n${stripHtmlComments(profileMd)}\n</candidate_search_profile>\n\n<candidate_resume>\n${stripHtmlComments(resumeMd)}\n</candidate_resume>\n\n<job>\nCompany: ${job.company}\nTitle: ${job.title}\nLocation (job board's label, often wrong): ${job.location || 'not stated'}\nWorkplace: ${job.workplaceType || (job.remote ? 'remote' : 'not stated')}\nSalary: ${job.salary || 'not stated'}\nSource: ${job.sourceLabel}\nTarget/dream company: ${job.dream ? 'yes' : 'no'}${reloc ? `\nCandidate would relocate for this company to: ${reloc.join(', ')}` : ''}\n\n${truncate(job.description, 9000)}\n</job>\n\nAssess this posting.`;
   return structuredRequest(scoreTool(), {
     model: model || 'claude-haiku-5-5',
     max_tokens: 3000,

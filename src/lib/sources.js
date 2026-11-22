@@ -43,8 +43,9 @@ function watchList(settings, extra) {
     if (e.enabled === false) continue;
     const det = e.url ? detectAts(e.url) : null;
     const name = e.name || (det && det.slug);
-    if (name) map[normName(name)] = { name, dream: !!e.dream };
-    for (const alias of e.aliases || []) map[normName(alias)] = { name, dream: !!e.dream };
+    const extra = Array.isArray(e.relocateTo) && e.relocateTo.length ? { relocateTo: e.relocateTo } : {};
+    if (name) map[normName(name)] = Object.assign({ name, dream: !!e.dream }, extra);
+    for (const alias of e.aliases || []) map[normName(alias)] = Object.assign({ name, dream: !!e.dream }, extra);
   }
   for (const w of extra || []) if (w && w.name) map[normName(w.name)] = map[normName(w.name)] || { name: w.name, dream: w.dream !== false };
   return map;
@@ -59,7 +60,7 @@ function companiesFromSettings(settings) {
     const det = e.ats && e.slug ? { ats: e.ats, slug: e.slug } : detectAts(e.url);
     if (!det) { invalid.push(e.url || JSON.stringify(e)); continue; }
     const name = e.name || (/\d/.test(det.slug) || det.slug.length <= 3 ? det.slug : det.slug.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()));
-    out.push({ name, ats: det.ats, slug: det.slug, dream: !!e.dream });
+    out.push({ name, ats: det.ats, slug: det.slug, dream: !!e.dream, relocateTo: Array.isArray(e.relocateTo) ? e.relocateTo : null });
   }
   return { companies: out, invalid };
 }
@@ -400,7 +401,7 @@ function parseLinkedInAlert(textPlain, textHtml) {
 function lightJob(lead) {
   return mk({ uid: 'linkedin:' + lead.id, source: 'linkedin', sourceLabel: 'LinkedIn alert', company: lead.company, title: lead.title,
     location: lead.location || '', remote: /remote/i.test(lead.location || '') ? true : null, postedAt: null, url: lead.url, applyUrl: lead.url,
-    description: '(Only the title, company and location are known: this came from a LinkedIn job alert and the full posting is not available. Judge fit from those alone; answer "unclear" for location, language and pay unless the title or location make them obvious, and do not mark the role down for missing detail.)',
+    description: '(Only the title, company and location are known: this came from a LinkedIn job alert and the full posting is not available. LinkedIn\'s location is reliable: "City, Country (Remote)" means remote within that country or region, "(Hybrid)"/"(On-site)" means that city. Judge location_eligible from it against the candidate\'s location rules exactly as for a full posting (a city or country the candidate can\'t work in = "no"). Answer "unclear" for language and pay unless obvious, and do not mark the role down for missing detail.)',
     light: true, leadId: lead.id });
 }
 
