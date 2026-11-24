@@ -56,6 +56,7 @@ const state = $getWorkflowStaticData('global');
 state.health = state.health || {};
 const now = Date.now();
 const bad = [];
+const FAIL_RUNS = 3; // consecutive failed runs before a source counts as broken
 const invalid = plan[0].json._candidate.leads ? [] : (plan[0].json._candidate.invalidCompanies || []);
 for (const u of invalid) {
   const key = 'url:' + u;
@@ -85,14 +86,20 @@ for (let i = 0; i < resp.length; i++) {
     }
   }
   const key = req.source + ':' + (req.slug || '');
+  // Boards hiccup (a 503 or a stray 404 that's gone 15 minutes later). Only speak up after FAIL_RUNS failed runs in a row.
+  state.healthFails = state.healthFails || {};
   if (problem) {
-    if (!state.health[key] || now - state.health[key] > 864e5) { bad.push({ name: req.company || req.source, problem, src: req.source }); state.health[key] = now; }
-  } else if (state.health[key]) delete state.health[key];
+    const fails = state.healthFails[key] = (state.healthFails[key] || 0) + 1;
+    if (fails >= FAIL_RUNS && (!state.health[key] || now - state.health[key] > 864e5)) { bad.push({ name: req.company || req.source, problem, src: req.source }); state.health[key] = now; }
+  } else {
+    delete state.healthFails[key];
+    if (state.health[key]) delete state.health[key];
+  }
 }
 await postStatus(this.helpers, 'health', { run: $execution.id, problems: bad.map((b) => ({ name: b.name + (b.src ? ' (' + b.src + ')' : ''), problem: b.problem })) });
 if (!bad.length) return [];
 const lines = bad.map((b) => `• ${b.name}${b.src ? ' (' + b.src + ')' : ''}: ${b.problem}`);
-const text = `JobRadar source check — these sources aren't delivering jobs. Fix or switch them off in settings.json:\n\n${lines.join('\n')}`;
+const text = `JobRadar source check — these sources failed ${FAIL_RUNS} runs in a row, so it's not a one-off hiccup. Fix or switch them off in settings.json:\n\n${lines.join('\n')}`;
 return [
   { json: { kind: 'tg_text', tg: { text: '🩺 ' + text, disable_web_page_preview: true } } },
   { json: { kind: 'email', subject: 'JobRadar: some sources need attention', text, html: `<pre style="font-family:inherit;white-space:pre-wrap">${escHtml(text)}</pre>` } },
