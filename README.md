@@ -215,7 +215,7 @@ Inside n8n (http://localhost:5678) you'll find eight workflows (one is the chat,
 ## Troubleshooting
 
 - **Nothing arrives:** ask the chat "why so quiet?", or check n8n → Executions. The first run only sends jobs from the last 7 days; later runs only *new* jobs. With a night pause on, nothing runs in that window.
-- **🩺 source alert:** a company link moved or a board changed. Fix it in the chat or in `settings.json`.
+- **🩺 source alert:** a source failed 3 runs in a row (one-off outages stay quiet), so a company link probably moved or a board changed. Fix it in the chat or in `settings.json`.
 - **Claude 401/credit errors:** check the key and credit at platform.claude.com, then `./jobradar restart`.
 - **Telegram "chat not found":** send your bot a message, run `./jobradar setup` again.
 - **Gmail login fails (email or LinkedIn alerts):** you need an *app password* (2-step verification on), not your normal password.

@@ -105,7 +105,7 @@ function tailorTool() { return {
       location_line: { type: 'string', description: 'Exactly one of the LOCATION_LINE options listed in the base cover letter, the one that fits the posting.' },
       variant: { type: 'string', description: 'Which angle of the candidate you led with, in a few words.' },
       role_summary: { type: 'string', description: '3-4 sentences: what the job really is (segment, motion, territory, quota signals, team).' },
-      changes: { type: 'array', items: { type: 'string' }, maxItems: 6, description: 'What you changed vs the base resume and why.' },
+      changes: { type: 'array', items: { type: 'string' }, maxItems: 6, description: 'What you changed vs the base resume and how each change helps him stand out for this job.' },
       verify: { type: 'array', items: { type: 'string' }, maxItems: 5, description: 'Specific things the candidate must double-check before submitting (reworded claims, emphasis that could be read as overstating, posting requirements he may not meet).' },
       intro_call_prep: { type: 'array', items: { type: 'string' }, maxItems: 4, description: 'Likely screening questions for this role and which of his real stories answers each.' },
       outreach_note: { type: 'string', description: 'LinkedIn connection note (max 250 characters) to the recruiter or hiring manager, in the candidate\'s voice, referencing the role. No flattery.' },
@@ -117,6 +117,12 @@ function tailorTool() { return {
 
 function tailorRequest(job, fit, resumeMd, coverMd, profileMd, inventoryMd, model) {
   const system = `You tailor a candidate's application materials for one job. The candidate reviews everything before he submits it himself.
+The one goal: help the candidate stand out and land the interview for THIS job. Every change versus the base has to earn its place by making him more obviously right for what this hiring manager needs most, or more memorable than the other applicants. If a change does neither, keep the base wording.
+How:
+- Find the posting's top 2-3 needs (what the hiring manager screens for in the first 30 seconds). The headline, the headline results and the first bullet under each role answer those needs with his strongest true proof.
+- Keep what makes him rare (unusual results, firsts, things others on his team didn't do). Don't sand it down to sound like the posting.
+- Cut before you add: shorten or drop lines this hiring manager won't care about so the strong ones get read.
+- Don't blur a gap the posting cares about with vague wording; leave it out and list it under "verify" so he can address it himself.
 Hard rules:
 1. Truth over fit. Only select, reorder and reword what is in the candidate's base resume and experience inventory. Never invent or inflate numbers, tools, skills, titles, seniority or outcomes. If the posting asks for something the candidate doesn't have, leave it out and list it under "verify".
 2. Follow every tailoring rule written in the HTML comments of the base files — they override your judgement.
