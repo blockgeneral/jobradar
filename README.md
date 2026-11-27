@@ -120,7 +120,7 @@ flowchart LR
    - Both fits ≥ 50 and overall ≥ 75 (`scoring.instantAt`), or a **dream company**: **Claude Sonnet** tailors your files and you get a card right away.
    - Both fits ≥ 50 but overall lower: one line in the next daily **"worth a look"** list (08:00 by default), no tailoring, no ping.
    - Anything else: dropped.
-4. **On every card:** where the employer says it hires, quoted from the posting (or "📍 Location unverified" when the posting never says, whatever the board's label claims), an **outbound-heavy** warning when the role is mostly self-sourcing pipeline, and the **RepVue** rating you noted for the company (`companies[].repvue`, or tell the chat "n8n is 4.5 on RepVue").
+4. **On every card:** where the employer says it hires, quoted from the posting (or "🗺️ Location unverified" when the posting never says, whatever the board's label claims), an **outbound-heavy** warning when the role is mostly self-sourcing pipeline, and the **RepVue** rating you noted for the company (`companies[].repvue`, or tell the chat "n8n is 4.5 on RepVue").
 5. **Guardrails in plain code** check every tailored file: any number not in your files, anything on your never-claim list, a missing section or changed contact details → a ⚠️ line on the card. A **"What changed"** file shows exactly what was edited versus your base resume.
 6. **Discovery:** companies that keep matching your values but aren't on your list show up in your Monday report with a ➕ button.
 7. If Claude is down or out of credit, you still get the job, marked as not screened, with your base files.
@@ -217,7 +217,7 @@ It runs while your computer is awake and Docker is open. On a Mac, keep it plugg
 ./jobradar start | stop | restart | logs
 ```
 
-Inside n8n (http://localhost:5678) you'll find eight workflows (one is the chat, one reads LinkedIn alerts if you switch it on) and two tables: **jobradar_jobs** (your application tracker) and **jobradar_watch** (companies you added with ➕), both viewable and editable there.
+Inside n8n (http://localhost:5678) you'll find nine workflows (one is the chat, one reads LinkedIn alerts if you switch it on, one reads the lead feeds) and two tables: **jobradar_jobs** (your application tracker) and **jobradar_watch** (companies you added with ➕), both viewable and editable there.
 
 ## Troubleshooting
 
@@ -236,7 +236,7 @@ Everything runs on your machine. Your files, tracker and keys never leave it, ex
 
 - Workflow logic lives in `src/` (`lib/` shared helpers, `wf/` one block per n8n Code node) and is compiled into `workflows/*.json` by `node build/build.js`. Never hand-edit `workflows/*.json`.
 - `node test/unit.js`: adapters, filters, guardrails, notifications, LinkedIn parsing (fixtures shaped like real alert emails), reposts, relocation, night pause, chat, email/reply/digest logic.
-- `N8N_BIN=/path/to/n8n bash test/e2e.sh`: boots a real n8n, imports all workflows, runs search → notify → button presses → weekly report → chat → a LinkedIn alert batch against mock boards, Claude, Telegram and SMTP; the renderer makes real Word files. `E2E_CANDIDATE=examples/candidate E2E_SETTINGS=$PWD/examples/settings.json E2E_EXPECT=1` runs the same as a fictional backend engineer.
+- `N8N_BIN=/path/to/n8n bash test/e2e.sh`: boots a real n8n, imports all workflows, runs search → notify → button presses → weekly report → chat → a LinkedIn alert batch → lead feeds (incl. workflow 8 itself) against mock boards, Claude, Telegram and SMTP; the renderer makes real Word files. `E2E_CANDIDATE=examples/candidate E2E_SETTINGS=$PWD/examples/settings.json E2E_EXPECT=1` runs the same as a fictional backend engineer.
 - `N8N_BIN=/path/to/n8n bash test/setup-wizard.sh`: runs the real `./jobradar setup` as a brand-new user from a clean checkout, with `test/fake-docker` standing in for containers.
 - Architecture notes: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
