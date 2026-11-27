@@ -88,6 +88,7 @@ flowchart LR
   A[Company job boards<br/>every 15 min] --> D
   B[Remote job boards<br/>every 15 min] --> D
   C[LinkedIn alert emails<br/>as they arrive] --> L[Find the posting on<br/>the company's own board] --> D
+  V[Lead feeds: Jobgether,<br/>VC portfolio boards<br/>hourly / 3-hourly] --> L
   D[Rules: titles, languages,<br/>duplicates, age<br/><i>no AI cost</i>] --> E[Claude Haiku screens:<br/>location, language, pay,<br/>skills fit, values fit]
   E -->|strong match or dream company| F[Claude Sonnet tailors<br/>resume + cover letter]
   E -->|plausible| G[Daily 'worth a look' list]
@@ -103,6 +104,11 @@ flowchart LR
 | Company career pages on Ashby, Greenhouse, Lever, Workable, Recruitee, Personio, SmartRecruiters, Pinpoint | their public job-board feeds | minutes after publishing |
 | Companies without a supported careers page | watched by name across every board below | as fast as the board |
 | We Work Remotely, Remotive, RemoteOK, Jobicy, Himalayas | public feeds | minutes to hours |
+| [Open Abroad](https://openabroad.org) | its public feed of roles that hire across borders, each tagged with who can apply | hourly |
+| [TrulyRemoteWork](https://trulyremotework.com) | its documented JSON feed of worldwide-remote roles | every 30 min |
+| Workable job search (every Workable career page) | the cross-company search, per phrase in `boardQueries` and place in `workableSearch` | hourly |
+| [Jobgether](https://jobgether.com) | its official API for agents (remote-friendly roles by country). Listings have no full text, so each one is looked up on the company's own job board first; otherwise a title-only card | hourly |
+| European VC portfolio job boards (Point Nine, Atomico, Creandum, Speedinvest, Earlybird, MMC, OpenOcean, firstminute, byFounders) | each board's public job sitemap, then that job's page | every 3 hours |
 | Hiring Cafe | the community [Hiring Cafe MCP server](https://hiringcafe-mcp.vercel.app/) (unofficial), or an Apify task | hourly |
 | LinkedIn job alerts (optional) | your own alert **emails**, read from your inbox (left unread) | as often as LinkedIn emails you |
 
@@ -114,9 +120,10 @@ flowchart LR
    - Both fits ≥ 50 and overall ≥ 75 (`scoring.instantAt`), or a **dream company**: **Claude Sonnet** tailors your files and you get a card right away.
    - Both fits ≥ 50 but overall lower: one line in the next daily **"worth a look"** list (08:00 by default), no tailoring, no ping.
    - Anything else: dropped.
-4. **Guardrails in plain code** check every tailored file: any number not in your files, anything on your never-claim list, a missing section or changed contact details → a ⚠️ line on the card. A **"What changed"** file shows exactly what was edited versus your base resume.
-5. **Discovery:** companies that keep matching your values but aren't on your list show up in your Monday report with a ➕ button.
-6. If Claude is down or out of credit, you still get the job, marked as not screened, with your base files.
+4. **On every card:** where the employer says it hires, quoted from the posting (or "📍 Location unverified" when the posting never says, whatever the board's label claims), an **outbound-heavy** warning when the role is mostly self-sourcing pipeline, and the **RepVue** rating you noted for the company (`companies[].repvue`, or tell the chat "n8n is 4.5 on RepVue").
+5. **Guardrails in plain code** check every tailored file: any number not in your files, anything on your never-claim list, a missing section or changed contact details → a ⚠️ line on the card. A **"What changed"** file shows exactly what was edited versus your base resume.
+6. **Discovery:** companies that keep matching your values but aren't on your list show up in your Monday report with a ➕ button.
+7. If Claude is down or out of credit, you still get the job, marked as not screened, with your base files.
 
 ### Dream companies, reposts and relocation
 

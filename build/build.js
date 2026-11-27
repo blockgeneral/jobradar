@@ -140,10 +140,10 @@ const radar = workflow('JobRadarMain0001', 'JobRadar · 1 Radar (every 15 min)',
   tableGetAll(a, '🗃️ Watch list', [1080, 580], WATCH);
   a.code('🧹 Normalize · dedupe · filter', [1200, 100], R.normalize, ['util', 'sources', 'prompts'], 'New + relevant only (no AI cost yet)');
   anthropic(a, '🤖 Screen (Claude Haiku)', [1440, 100], 'scoreRequest', 120000, 'Location, language, pay, fit 0–100');
-  a.code('🎯 Gate', [1680, 100], R.gate, ['util', 'prompts'], 'Good matches only');
+  a.code('🎯 Gate', [1680, 100], R.gate, ['util', 'sources', 'prompts'], 'Good matches only');
   a.node('🔀 Tailor now or list', 'n8n-nodes-base.switch', 3.2, [1800, 100], { mode: 'expression', numberOutputs: 3, output: "={{ ({ digest: 1, light: 2 })[$json.tier] ?? 0 }}", options: {} },
-    { notes: 'Strong + dream → now; 50–74 → daily list; LinkedIn-only → title card', notesInFlow: true });
-  a.code('🔎 LinkedIn title-only cards', [1920, 520], R.light_cards, ['util', 'notify']);
+    { notes: 'Strong + dream → now; 50–74 → daily list; title-only (LinkedIn, Jobgether) → title card', notesInFlow: true });
+  a.code('🔎 Title-only cards', [1920, 520], R.light_cards, ['util', 'notify']);
   sendCall(a, '📨 Send title-only cards', [2160, 520]);
   a.code('📝 Title-only rows', [1920, 700], R.light_rows, ['util']);
   tableInsert(a, '🗃️ Add title-only to tracker', [2160, 700], TABLE);
@@ -179,9 +179,9 @@ const radar = workflow('JobRadarMain0001', 'JobRadar · 1 Radar (every 15 min)',
   a.linkOut('🔀 Tailor now or list', 0, '✍️ Tailor (Claude Sonnet)');
   a.linkOut('🔀 Tailor now or list', 1, '📝 Worth-a-look rows');
   a.link('📝 Worth-a-look rows', '🗃️ Add to daily list');
-  a.linkOut('🔀 Tailor now or list', 2, '🔎 LinkedIn title-only cards');
+  a.linkOut('🔀 Tailor now or list', 2, '🔎 Title-only cards');
   a.linkOut('🔀 Tailor now or list', 2, '📝 Title-only rows');
-  a.link('🔎 LinkedIn title-only cards', '📨 Send title-only cards');
+  a.link('🔎 Title-only cards', '📨 Send title-only cards');
   a.link('📝 Title-only rows', '🗃️ Add title-only to tracker');
   a.link('✍️ Tailor (Claude Sonnet)', '🛡️ Guardrails & compose');
   a.link('🛡️ Guardrails & compose', '📑 Render requests', '🗂️ Editable sources');
@@ -325,7 +325,36 @@ const linkedin = workflow('JobRadarLnkd0001', 'JobRadar · 7 LinkedIn alerts (op
   a.linkOut('🔀 Leads or alert', 1, '📣 Send parser alert');
 });
 
-const all = { send, radar, actions, inbox, replies, reports, chat: chatWf, linkedin };
+// ───────────────────────── Lead feeds ─────────────────────────
+// Listing feeds that name the company and title but not the full posting (Jobgether's agents API, the sitemaps of
+// European VC portfolio job boards). New relevant listings go to the radar, which finds the full posting on the
+// company's own job board (or reads the board's job page) before screening.
+const leadFeeds = workflow('JobRadarLead0001', 'JobRadar · 8 Lead feeds (Jobgether, VC boards)', (a) => {
+  a.sticky([-60, -300], 640, 200, '## Lead feeds → JobRadar\nEvery hour: Jobgether (remote-friendly roles by country, its official API for agents). Every 3 hours: the job sitemaps of European VC portfolio boards (Point Nine, Atomico, Speedinvest, Earlybird …). New listings whose title you want go to the radar like LinkedIn alerts do. Switch off in settings.json: "boards": { "jobgether": false, "getro": false }.', 4);
+  a.node('⏰ Every hour', 'n8n-nodes-base.scheduleTrigger', 1.2, [0, 0], { rule: { interval: [{ field: 'hours', hoursInterval: 1 }] } });
+  a.node('▶️ Run now', 'n8n-nodes-base.manualTrigger', 1, [0, 200], {});
+  readFiles(a, '📂 Read settings', [240, 100], '/settings.json');
+  a.code('📋 Plan lead feeds', [480, 100], O.lead_plan, ['util', 'sources']);
+  a.http('🌐 Fetch feeds', [720, 100], { method: 'GET', url: '={{ $json.url }}',
+    sendHeaders: true, headerParameters: { parameters: [{ name: 'User-Agent', value: 'JobRadar/1.0 (open-source personal job search assistant)' }, { name: 'Accept', value: 'application/json, application/xml, */*' }] },
+    options: { timeout: 45000, batching: { batch: { batchSize: 1, batchInterval: 2000 } }, response: { response: { responseFormat: 'text', outputPropertyName: 'data' } } },
+  }, { onError: 'continueRegularOutput', notes: 'One request every 2 s (Jobgether asks for a 2-second crawl delay)', notesInFlow: true });
+  a.code('🧲 New listings → leads', [960, 100], O.lead_parse, ['util', 'sources']);
+  a.node('🔀 Leads or alert', 'n8n-nodes-base.switch', 3.2, [1200, 100], { mode: 'expression', numberOutputs: 2, output: "={{ $json.kind === 'leads' ? 0 : 1 }}", options: {} });
+  a.http('📡 Hand to the radar', [1440, 0], { method: 'POST', url: "={{ ($env.JOBRADAR_SELF_URL || 'http://127.0.0.1:5678') + '/webhook/jobradar-run' }}", sendBody: true, contentType: 'json', specifyBody: 'json',
+    jsonBody: '={{ JSON.stringify({ leads: $json.leads }) }}', options: { timeout: 900000, batching: { batch: { batchSize: 1, batchInterval: 1000 } } } }, { onError: 'continueRegularOutput' });
+  sendCall(a, '📣 Send feed alert', [1440, 200]);
+  a.link('⏰ Every hour', '📂 Read settings');
+  a.link('▶️ Run now', '📂 Read settings');
+  a.link('📂 Read settings', '📋 Plan lead feeds');
+  a.link('📋 Plan lead feeds', '🌐 Fetch feeds');
+  a.link('🌐 Fetch feeds', '🧲 New listings → leads');
+  a.link('🧲 New listings → leads', '🔀 Leads or alert');
+  a.linkOut('🔀 Leads or alert', 0, '📡 Hand to the radar');
+  a.linkOut('🔀 Leads or alert', 1, '📣 Send feed alert');
+});
+
+const all = { send, radar, actions, inbox, replies, reports, chat: chatWf, linkedin, leads: leadFeeds };
 fs.mkdirSync(path.join(root, 'workflows'), { recursive: true });
 for (const f of fs.readdirSync(path.join(root, 'workflows'))) if (f.endsWith('.json')) fs.unlinkSync(path.join(root, 'workflows', f));
 let errors = 0;

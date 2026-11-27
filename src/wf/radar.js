@@ -18,7 +18,7 @@ let leads = null;
 try {
   const b = $('🔗 Run from CLI').first().json.body || {};
   manualUrl = typeof b.url === 'string' ? b.url.trim() : '';
-  if (Array.isArray(b.leads)) leads = b.leads.filter((l) => l && l.id && l.title && l.company).slice(0, 60);
+  if (Array.isArray(b.leads)) leads = b.leads.filter((l) => l && l.id && l.title && l.company).slice(0, 60); // LinkedIn alerts, or the lead feeds (workflow 8)
 } catch (e) { /* not started from the webhook */ }
 // Night pause (notifications.quietHours with "pause": true): scheduled runs do nothing — no AI calls, no messages.
 // LinkedIn alert jobs that arrive meanwhile wait and are checked on the first run after the pause.
@@ -38,7 +38,7 @@ if (leads) {
   // LinkedIn alert jobs: skip the ones already handled, and the ones your title/location filters drop anyway
   const state = $getWorkflowStaticData('global');
   const watched = watchList(settings, []);
-  leads = leads.filter((l, i, a) => a.findIndex((x) => x.id === l.id) === i && !(state.seen || {})['linkedin:' + l.id]);
+  leads = leads.filter((l, i, a) => a.findIndex((x) => leadKey(x) === leadKey(l)) === i && !(state.seen || {})[leadKey(l)]);
   leads = leads.filter((l) => { const w = watched[normName(l.company)]; return !preFilter({ title: l.title, description: '', location: l.location || '', dream: !!(w && w.dream), postedAt: null }, settings, Date.now()); });
   reqs = leadRequests(leads, settings, state.leadBoards, Date.now(), env.MOCK || '').reqs;
 } else reqs = manualUrl ? manualRequests(manualUrl, env.MOCK || '') : buildRequests(settings, env, Date.now(), env.MOCK || '');
@@ -80,7 +80,9 @@ for (let i = 0; i < resp.length; i++) {
       // job boards (not company pages, which can legitimately have no openings): zero usable jobs for a day = broken
       let count = 0; try { count = normalize(req, r.data).length; } catch (e) {}
       state.yield = state.yield || {};
-      const y = state.yield[req.source + ':' + (req.slug || '')] = state.yield[req.source + ':' + (req.slug || '')] || { since: now, last: null };
+      // a search split into slices (one per phrase × place) is judged as a whole: one quiet slice isn't broken
+      const yk = req.source === 'workable_search' ? req.source : req.source + ':' + (req.slug || '');
+      const y = state.yield[yk] = state.yield[yk] || { since: now, last: null };
       if (count > 0) y.last = now;
       else if (now - (y.last || y.since) > 864e5) problem = 'no usable jobs for over 24 hours — the source may have changed or be blocking us';
     }
@@ -117,10 +119,10 @@ const now = Date.now();
 const state = $getWorkflowStaticData('global');
 state.seen = state.seen || {};
 const known = new Set();
-const carded = new Set(); // jobs that actually went out as a card (tailored files, or a LinkedIn title-only card)
+const carded = new Set(); // jobs that actually went out as a card (tailored files, or a title-only card)
 for (const r of tracked) {
   known.add(r.uid); if (r.alt_key) known.add('alt:' + r.alt_key);
-  if (r.folder || r.source === 'linkedin') { carded.add(r.uid); if (r.alt_key) carded.add('alt:' + r.alt_key); }
+  if (r.folder || lightSources().includes(r.source)) { carded.add(r.uid); if (r.alt_key) carded.add('alt:' + r.alt_key); }
 }
 // A job is "judged" once it was screened or filtered for a reason other than its age. Dream-company reposts and
 // LinkedIn leads come through again unless judged or carded. Everything seen before this rule existed (or on the
@@ -151,13 +153,17 @@ for (let i = 0; i < fetched.length; i++) {
   } catch (e) { /* malformed payload — reported by 🩺 */ }
 }
 if (leads) {
-  // each LinkedIn lead → its posting on the company's own job board (full description), else a title-only job
+  // each lead → its posting on the company's own job board (full description) or the listing's own job page,
+  // else a title-only job
   for (const [n, found] of Object.entries(guessed)) if (!found) state.leadBoards[n] = { none: true, at: now };
   const out = [];
   for (const l of leads) {
     const n = normName(l.company);
-    const hit = matchLead(l, jobs.filter((j) => normName(j.company) === n));
-    out.push(hit ? Object.assign(hit, { viaLinkedIn: true, leadId: l.id, sourceLabel: hit.sourceLabel + ' · via LinkedIn alert' }) : lightJob(l));
+    const page = l.detailUrl ? jobs.find((j) => j.detailFor === l.id) : null;
+    const hit = page || matchLead(l, jobs.filter((j) => normName(j.company) === n));
+    const via = leadVia(l);
+    if (hit) out.push(Object.assign(hit, { viaLead: via, viaLinkedIn: via === 'linkedin', leadId: l.id, leadKey: leadKey(l), sourceLabel: hit.sourceLabel + (page ? '' : ' · via ' + leadLabel(via)) }));
+    else if (!l.detailUrl) out.push(lightJob(l)); // a job page that's gone = the role closed: drop it
   }
   jobs = out;
 }
@@ -169,7 +175,11 @@ if (manualUrl) {
 }
 for (const j of jobs) { const w = watched[normName(j.company)]; if (w) { j.watched = true; if (w.dream) j.dream = true; if (w.relocateTo) j.relocateTo = w.relocateTo; } }
 const stats = { fetched: jobs.length };
-if (leads) { stats.linkedin = leads.length; stats.linkedinMatched = jobs.filter((j) => j.viaLinkedIn).length; }
+if (leads) {
+  const li = leads.filter((l) => leadVia(l) === 'linkedin');
+  if (li.length) { stats.linkedin = li.length; stats.linkedinMatched = jobs.filter((j) => j.viaLinkedIn).length; }
+  if (li.length < leads.length) { stats.leadFeed = leads.length - li.length; stats.leadFeedMatched = jobs.filter((j) => j.viaLead && j.viaLead !== 'linkedin').length; }
+}
 // You just said you'd relocate for a company: its open roles get one fresh look under the new location rule
 // (jobs you already got a card for still never repeat).
 state.relocateKey = state.relocateKey || {};
@@ -186,7 +196,7 @@ for (const c of companiesFromSettings(settings).companies) {
 }
 const passed = [];
 const batch = new Set();
-const mark = (j) => { state.seen[j.uid] = now; state.seen['alt:' + j.altKey] = now; if (j.leadId) state.seen['linkedin:' + j.leadId] = now; };
+const mark = (j) => { state.seen[j.uid] = now; state.seen['alt:' + j.altKey] = now; if (j.leadKey) state.seen[j.leadKey] = now; };
 const noAge = Object.assign({}, settings, { filters: Object.assign({}, f, { freshHours: Infinity }) });
 for (const j of jobs) {
   if (batch.has(j.uid) || batch.has('alt:' + j.altKey)) { stats.duplicate = (stats.duplicate || 0) + 1; continue; }
@@ -263,6 +273,9 @@ for (let i = 0; i < resp.length; i++) {
     fit.location_eligible = 'unclear';
     lockWarn.push(`Location: posting reads ${lock.country}-only (${lock.evidence}), though the board says "${job.location || 'remote'}". Check before applying.`);
   }
+  // Where they hire, in the employer's own words — or a plain warning that the posting never says.
+  const sig = cardSignals(job, fit, settings);
+  fit.signal_lines = sig.lines; lockWarn.push(...sig.checks);
   const hardNo = fit.location_eligible === 'no' || fit.english_only === 'no' || fit.comp_meets_floor === 'no';
   const low = skills < (job.dream ? minS - 10 : minS) || values < minV;
   if (job.manual) {
@@ -431,7 +444,7 @@ return $('🛡️ Guardrails & compose').all().map(({ json: c }) => ({ json: Obj
 }), { jr_id: c.jrId }) }));
 
 //@node light_cards
-// 🔎 LinkedIn title-only cards — the posting isn't on a public job board, so nothing is tailored; open it on LinkedIn
+// 🔎 Title-only cards (LinkedIn alerts, Jobgether) — the posting isn't on a public job board, so nothing is tailored
 const { settings } = $('⚙️ Plan run').first().json._candidate;
 const n = settings.notifications || {};
 const quiet = inQuietHours(n.quietHours, envGet('GENERIC_TIMEZONE'), Date.now());
@@ -445,6 +458,6 @@ for (const { json: c } of $input.all()) {
 return out;
 
 //@node light_rows
-// 📝 Tracker rows for the LinkedIn title-only cards (so ✅ Applied / ⏭ Skip and the reports work)
+// 📝 Tracker rows for the title-only cards (so ✅ Applied / ⏭ Skip and the reports work)
 const now = new Date().toISOString();
 return $input.all().map(({ json: c }) => ({ json: Object.assign(trackerRow(c.job, c.fit, { status: 'notified', notified_at: now, folder: '', channel: channelsEnabled().join(',') }), { jr_id: c.jrId }) }));

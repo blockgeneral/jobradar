@@ -38,8 +38,8 @@ const TOOLS = [
     input_schema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } },
   { name: 'change_settings', description: 'Stage changes to settings.json by dotted path, e.g. "scoring.instantAt" = 60 (the "ping me above X" setting), "hiringCafe.enabled" = false, "notifications.quietHours.from" = "23:00", "filters.titleExclude" = [..]. Read settings first. For companies use watch_company.',
     input_schema: { type: 'object', properties: { changes: { type: 'array', items: { type: 'object', properties: { path: { type: 'string' }, value: { description: 'New JSON value' } }, required: ['path', 'value'] } }, why: { type: 'string' } }, required: ['changes', 'why'] } },
-  { name: 'watch_company', description: 'Stage adding, starring (dream) or removing a watched company. url = their careers/job-board page if the user gave one.',
-    input_schema: { type: 'object', properties: { name: { type: 'string' }, url: { type: 'string' }, dream: { type: 'boolean' }, remove: { type: 'boolean' } }, required: ['name'] } },
+  { name: 'watch_company', description: 'Stage adding, starring (dream) or removing a watched company. url = their careers/job-board page if the user gave one. repvue = the RepVue rating the user gives for it (shown on every card for that company).',
+    input_schema: { type: 'object', properties: { name: { type: 'string' }, url: { type: 'string' }, dream: { type: 'boolean' }, remove: { type: 'boolean' }, repvue: { type: 'number' } }, required: ['name'] } },
   { name: 'save_pending', description: 'Save all staged changes. Only call this right after the user clearly said yes to them.', input_schema: { type: 'object', properties: {} } },
   { name: 'discard_pending', description: 'Drop all staged changes.', input_schema: { type: 'object', properties: {} } },
   { name: 'jobradar_status', description: 'Recent radar runs: jobs seen, why they were filtered, how many were screened, matches sent, broken sources. Use for "why so quiet?", "is it working?".', input_schema: { type: 'object', properties: { hours: { type: 'number' } } } },
@@ -137,7 +137,7 @@ function stageSettings(s, changes, why) {
 }
 
 const normName = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-function stageCompany(s, { name, url, dream, remove }) {
+function stageCompany(s, { name, url, dream, remove, repvue }) {
   let cfg;
   try { cfg = settingsBase(s); } catch (e) { return { error: 'settings.json is not valid JSON: ' + e.message }; }
   cfg.companies = cfg.companies || [];
@@ -149,10 +149,11 @@ function stageCompany(s, { name, url, dream, remove }) {
   } else if (i >= 0) {
     if (url) cfg.companies[i].url = url;
     if (dream !== undefined) { if (dream) cfg.companies[i].dream = true; else delete cfg.companies[i].dream; }
-    line = `${cfg.companies[i].name}: ${dream ? '⭐ dream company' : 'updated'}${url ? ' · ' + url : ''}`;
+    if (typeof repvue === 'number') cfg.companies[i].repvue = repvue;
+    line = `${cfg.companies[i].name}: ${dream ? '⭐ dream company' : 'updated'}${url ? ' · ' + url : ''}${typeof repvue === 'number' ? ' · RepVue ' + repvue : ''}`;
   } else {
-    const e = { name }; if (url) e.url = url; if (dream) e.dream = true;
-    cfg.companies.push(e); line = `watch ${name}${dream ? ' ⭐' : ''}${url ? ' · ' + url : ' (found by name on job boards)'}`;
+    const e = { name }; if (url) e.url = url; if (dream) e.dream = true; if (typeof repvue === 'number') e.repvue = repvue;
+    cfg.companies.push(e); line = `watch ${name}${dream ? ' ⭐' : ''}${url ? ' · ' + url : ' (found by name on job boards)'}${typeof repvue === 'number' ? ' · RepVue ' + repvue : ''}`;
   }
   s.pending.push({ key: 'settings', file: 'settings.json', why: line, lines: [line], after: JSON.stringify(cfg, null, 2) + '\n' });
   return { staged: true, change: line };
@@ -202,11 +203,11 @@ function readStatus(hours) {
   for (const r of rows) {
     if (r.part === 'normalize') for (const [k, v] of Object.entries(r.stats || {})) if (typeof v === 'number') sum[k] = (sum[k] || 0) + v;
     if (r.part === 'health') for (const b of r.problems || []) problems[b.name] = b.problem;
-    if (r.part === 'gate') { sum.screened = (sum.screened || 0) + (r.screened || 0); sum.sent_now = (sum.sent_now || 0) + (r.instant || []).length; sum.daily_list = (sum.daily_list || 0) + (r.digest || []).length; sum.linkedin_title_only = (sum.linkedin_title_only || 0) + (r.light || []).length; matches.push(...(r.instant || []), ...(r.digest || []), ...(r.light || [])); }
+    if (r.part === 'gate') { sum.screened = (sum.screened || 0) + (r.screened || 0); sum.sent_now = (sum.sent_now || 0) + (r.instant || []).length; sum.daily_list = (sum.daily_list || 0) + (r.digest || []).length; sum.title_only = (sum.title_only || 0) + (r.light || []).length; matches.push(...(r.instant || []), ...(r.digest || []), ...(r.light || [])); }
   }
   const last = rows.length ? rows[rows.length - 1].at : null;
   return { hours: hours || 24, runs, last_run: last, totals: sum, matches: matches.slice(-10), broken_sources: problems,
-    legend: 'fetched = jobs seen on all sources; seen = already known; repost = dream-company jobs let through again because no card was ever sent for them; linkedin / linkedinMatched = jobs from LinkedIn alert emails / how many of them were found on the company’s own job board (the rest get a title-only card); the other counts are filter reasons (title, location, language, stale); toScore = sent to the AI screener' };
+    legend: 'fetched = jobs seen on all sources; seen = already known; repost = dream-company jobs let through again because no card was ever sent for them; linkedin / linkedinMatched = jobs from LinkedIn alert emails / how many of them were found on the company’s own job board (the rest get a title-only card); leadFeed / leadFeedMatched = the same for the lead feeds (Jobgether, VC portfolio boards); title_only = title-only cards sent; the other counts are filter reasons (title, location, language, stale); toScore = sent to the AI screener' };
 }
 
 async function checkJob(url) {
@@ -244,6 +245,8 @@ How you work:
 - Settings changes apply from the next radar run (within 15 minutes); no restart needed.
 - "Don't ping me at night", "no notifications 23:00–07:00" → notifications.quietHours = { from, to, pause: true } (pause = the radar doesn't run then: no AI cost, no messages; LinkedIn alert jobs wait until morning). Without pause, Telegram just arrives silently.
 - "I'd relocate for X", "X sponsors visas, UK/Ireland roles are fine" → that company's relocateTo = ["United Kingdom", "Ireland"] in settings.companies (use change_settings on companies.<index>.relocateTo after reading settings). Its open roles get one fresh look.
+- "X is 4.3 on RepVue" → watch_company with repvue = 4.3 (adds X to the watch list if needed). It shows on every card for that company; scoring.repvueMin = 4 marks ratings below their bar.
+- "Stop Jobgether / the VC boards / Open Abroad / TrulyRemoteWork / Workable search" → boards.jobgether / boards.getro / boards.openabroad / boards.trulyremotework / boards.workable_search = false. "Check X less often" → boardEvery.<board> = minutes.
 - Thresholds people mix up: "only ping me above X", "fewer pings", "only tell me about strong matches" → scoring.instantAt = X (matches above it are tailored and pinged right away; matches below it but above the minimums go to the daily "worth a look" list; dream companies always ping). "Stop showing me weak matches at all" → scoring.minSkillsFit / scoring.minValuesFit.
 - Be brief and concrete. No JSON or file paths unless they ask. Today is ${new Date().toISOString().slice(0, 10)}.
 ${qs ? '\nOpen questions from their CV review:\n' + qs : ''}`;

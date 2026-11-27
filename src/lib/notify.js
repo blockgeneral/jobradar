@@ -10,6 +10,7 @@ function shortLoc(job) {
   const s = l.length > 38 ? l.slice(0, 36) + '…' : l;
   return [s, w && !new RegExp(w, 'i').test(s) ? w : ''].filter(Boolean).join(' · ') || 'Location n/a';
 }
+function lightOpenLabel(job) { return job.source === 'linkedin' ? '🔗 Open on LinkedIn' : job.source === 'jobgether' ? '🔗 Open on Jobgether' : '🔗 Open posting'; }
 function liSearch(q) { return 'https://www.linkedin.com/search/results/people/?keywords=' + encodeURIComponent(q) + '&origin=GLOBAL_SEARCH_HEADER'; }
 
 function inQuietHours(qh, tz, now) {
@@ -55,6 +56,7 @@ function telegramCard(c, prefs) {
     `🏢 <b>${escHtml(job.company)}</b>${job.dream ? ' ⭐' : ''} · 📍 ${escHtml(shortLoc(job))}`,
     `📊 <b>${score}</b>/100${fit.skills_fit != null ? ` (skills ${fit.skills_fit} · values ${fit.values_fit})` : ''}${job.salary ? ' · 💶 ' + escHtml(String(job.salary).slice(0, 40)) : ''} · 🕒 ${job.postedAt ? humanAge(job.postedAt) : 'just found'}`,
   ];
+  for (const l of fit.signal_lines || []) lines.push(escHtml(l));
   if (fit.why && fit.why[0]) lines.push(`✨ ${escHtml(String(fit.why[0]).slice(0, 160))}`);
   if ((fit.values_match || [])[0]) lines.push(`💚 ${escHtml(fit.values_match.slice(0, detailed ? 3 : 1).join(' · ').slice(0, 200))}`);
   if (c.changes) lines.push(c.changes.unchanged ? '✏️ Resume unchanged — your base version' : `✏️ Resume: ${escHtml(c.changes.summary)} — see “What changed”`);
@@ -105,6 +107,7 @@ function emailForJob(c, prefs, to) {
   <div style="font-size:20px;font-weight:700;margin:4px 0 8px">${escHtml(job.title)}</div>
   <div style="font-size:15px;margin-bottom:10px"><b style="font-size:22px">${score}</b>/100${fit.skills_fit != null ? ` · skills ${fit.skills_fit} · values ${fit.values_fit}` : ''}${job.salary ? ' · ' + escHtml(job.salary) : ''}</div>
   ${fit.company_note ? `<div style="font-size:13px;color:#5b6b7f;margin-bottom:8px">${escHtml(fit.company_note)}</div>` : ''}
+  ${(fit.signal_lines || []).map((l) => `<div style="font-size:13px;margin-bottom:6px">${escHtml(l)}</div>`).join('')}
   ${fit.why && fit.why[0] ? `<div style="margin-bottom:12px">✨ ${escHtml(fit.why[0])}</div>` : ''}
   ${c.changes ? `<div style="margin-bottom:12px">✏️ ${c.changes.unchanged ? 'Resume unchanged — your base version' : 'Resume: ' + escHtml(c.changes.summary) + ' — see the “What changed” attachment'}</div>` : ''}
   ${checks.length ? `<div style="background:#fff7e6;border:1px solid #f5d38b;border-radius:8px;padding:10px 12px;margin-bottom:14px"><b>⚠️ Check before sending</b><ul style="margin:6px 0 0;padding-left:18px">${li(checks)}</ul></div>` : ''}
@@ -252,12 +255,13 @@ function lightCard(c, prefs) {
     `🏢 <b>${escHtml(job.company)}</b>${job.dream ? ' ⭐' : ''} · 📍 ${escHtml(shortLoc(job))}`,
     `📊 <b>${score}</b>/100 <i>(from the title only)</i>`,
   ];
+  for (const l of fit.signal_lines || []) lines.push(escHtml(l));
   if (fit.why && fit.why[0]) lines.push(`✨ ${escHtml(String(fit.why[0]).slice(0, 160))}`);
   const checks = [].concat(c.warnings || []).slice(0, 2);
   if (checks.length) lines.push('', ...checks.map((x) => '⚠️ ' + escHtml(String(x).slice(0, 180))));
-  lines.push('', 'ℹ️ From a LinkedIn alert. This posting isn\'t on the company\'s public job board, so nothing is tailored. If you find it on their careers site, paste that link in the JobRadar chat to get tailored files.');
+  lines.push('', `ℹ️ From ${job.source === 'linkedin' ? 'a LinkedIn alert' : escHtml(job.sourceLabel || 'a job listing')}. This posting isn't on the company's public job board, so nothing is tailored. If you find it on their careers site, paste that link in the JobRadar chat to get tailored files.`);
   const b = Object.assign({ linkedinSearch: true, statusButtons: true }, p.buttons || {});
-  const kb = [[{ text: '🔗 Open on LinkedIn', url: job.url }]];
+  const kb = [[{ text: lightOpenLabel(job), url: job.url }]];
   if (b.linkedinSearch) { const links = contactLinks(job, fit, null).filter((l) => !l.text.startsWith('👤')); if (links.length) kb.push(links); }
   if (b.statusButtons) kb.push([{ text: '✅ Applied', callback_data: 'ap:' + c.jrId }, { text: '⏭ Skip', callback_data: 'sk:' + c.jrId }]);
   return { parse_mode: 'HTML', text: lines.join('\n'), disable_web_page_preview: true, reply_markup: { inline_keyboard: kb } };
@@ -267,15 +271,15 @@ function lightEmail(c, prefs, to) {
   const { job, fit } = c;
   const b = Object.assign({ linkedinSearch: true, statusButtons: true }, (prefs || {}).buttons || {});
   const score = fit.score === null || fit.score === undefined ? '—' : fit.score;
-  const subject = `${score} · ${job.title} at ${job.company} · from a LinkedIn alert`;
+  const subject = `${score} · ${job.title} at ${job.company} · from ${job.source === 'linkedin' ? 'a LinkedIn alert' : job.sourceLabel || 'a job listing'}`;
   const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f5f7fa;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#1a1a1a">
 <div style="max-width:620px;margin:0 auto;padding:20px"><div style="background:#fff;border-radius:12px;padding:20px 22px;border:1px solid #e3e8ef">
-  <div style="font-size:13px;color:#5b6b7f">${escHtml(job.company)}${job.dream ? ' ⭐' : ''} · ${escHtml(shortLoc(job))} · LinkedIn alert</div>
+  <div style="font-size:13px;color:#5b6b7f">${escHtml(job.company)}${job.dream ? ' ⭐' : ''} · ${escHtml(shortLoc(job))} · ${escHtml(job.source === 'linkedin' ? 'LinkedIn alert' : job.sourceLabel || '')}</div>
   <div style="font-size:20px;font-weight:700;margin:4px 0 8px">${escHtml(job.title)}</div>
   <div style="font-size:15px;margin-bottom:10px"><b style="font-size:22px">${score}</b>/100 <i>(from the title only)</i></div>
   ${fit.why && fit.why[0] ? `<div style="margin-bottom:12px">✨ ${escHtml(fit.why[0])}</div>` : ''}
   <div style="font-size:13px;color:#5b6b7f;margin-bottom:12px">This posting isn't on the company's public job board, so nothing is tailored. If you find it on their careers site, paste that link in the JobRadar chat to get tailored files.</div>
-  <div>${btn(job.url, '🔗 Open on LinkedIn', true)}${b.linkedinSearch ? contactLinks(job, fit, null).filter((l) => !l.text.startsWith('👤')).map((l) => btn(l.url, l.text)).join('') : ''}</div>
+  <div>${btn(job.url, lightOpenLabel(job), true)}${b.linkedinSearch ? contactLinks(job, fit, null).filter((l) => !l.text.startsWith('👤')).map((l) => btn(l.url, l.text)).join('') : ''}</div>
   ${b.statusButtons ? `<div style="margin-top:4px">${btn(mailto(to, 'APPLIED', c.jrId, 'applied'), '✅ I applied')}${btn(mailto(to, 'SKIP', c.jrId, 'skipped'), '⏭ Skip')}</div>` : ''}
 </div></div></body></html>`;
   return { subject, html, text: `${subject}\n\n${job.url}\n` };

@@ -229,3 +229,66 @@ if (unreadable && (!state.unreadableAt || now - state.unreadableAt > 864e5)) {
 }
 if (leads.length) { state.lastLeadsAt = now; state.leadCount = (state.leadCount || 0) + leads.length; }
 return out;
+
+//@node lead_plan
+// 📋 Lead feeds — which listing feeds to read this hour (Jobgether every hour, VC portfolio boards every 3 hours)
+const items = $input.all();
+let settings = {};
+for (let i = 0; i < items.length; i++) {
+  const bin = items[i].binary && items[i].binary.data;
+  if (bin && bin.fileName === 'settings.json') { try { settings = JSON.parse((await this.helpers.getBinaryDataBuffer(i, 'data')).toString('utf8')); } catch (e) { throw new Error('settings.json is not valid JSON: ' + e.message); } }
+}
+let manual = false; // started by hand ("Run now"): read every feed, whatever the hour
+try { manual = $('▶️ Run now').all().length > 0; } catch (e) { /* started by the schedule */ }
+const reqs = leadFeedRequests(settings, Date.now(), envGet('JOBRADAR_MOCK_BASE') || '', manual);
+return reqs.map((r, i) => ({ json: i === 0 ? Object.assign({}, r, { _settings: settings }) : r }));
+
+//@node lead_parse
+// 🧲 New listings → leads for the radar. Only titles you'd want (your title filters), only listings not handed over
+// before; the very first read of a feed only passes what's under two days old, so switching it on isn't a flood.
+const plan = $('📋 Plan lead feeds').all();
+const resp = $input.all();
+const settings = (plan[0] && plan[0].json._settings) || {};
+const state = $getWorkflowStaticData('global');
+state.leadSeen = state.leadSeen || {}; state.leadInit = state.leadInit || {}; state.feedFails = state.feedFails || {}; state.feedAlert = state.feedAlert || {};
+const now = Date.now();
+const watched = watchList(settings, []);
+const leads = []; const bad = [];
+const stats = {};
+for (let i = 0; i < resp.length; i++) {
+  const req = plan[i] && plan[i].json; const r = resp[i].json;
+  if (!req) continue;
+  const key = req.source + ':' + req.slug;
+  let got = null;
+  if (!r.error) { try { got = req.source === 'jobgether' ? jobgetherLeads(r.data) : getroLeads(r.data, req.slug); } catch (e) { got = null; } }
+  if (!got || (!got.length && req.source === 'getro')) { // a sitemap with no jobs, or an error = something changed
+    const fails = state.feedFails[key] = (state.feedFails[key] || 0) + 1;
+    if (fails >= 3 && (!state.feedAlert[key] || now - state.feedAlert[key] > 864e5)) { state.feedAlert[key] = now; bad.push(`${req.source} (${req.slug}): ${r.error ? String(r.error.message || r.error).slice(0, 120) : 'no usable listings'}`); }
+    continue;
+  }
+  delete state.feedFails[key];
+  const first = !state.leadInit[key]; state.leadInit[key] = now;
+  stats[key] = { listed: got.length, passed: 0 };
+  for (const l of got) {
+    if (l.via === 'getro' && l.lastmod && now - Date.parse(l.lastmod) > 14 * 864e5) continue; // long-open roles aren't news
+    const w = watched[normName(l.company)];
+    if (preFilter({ title: l.title, description: '', location: l.location || '', dream: !!(w && w.dream), postedAt: null }, settings, now)) continue;
+    const k = leadKey(l);
+    const known = state.leadSeen[k];
+    state.leadSeen[k] = now; // refreshed while it stays listed, so it never comes back as "new"
+    if (known) continue;
+    const t = Date.parse(l.postedAt || l.lastmod || '');
+    if (first && !(t && now - t < 2 * 864e5)) continue;
+    if (!leads.some((x) => leadKey(x) === k)) { leads.push(l); stats[key].passed++; }
+  }
+}
+for (const k of Object.keys(state.leadSeen)) if (now - state.leadSeen[k] > 30 * 864e5) delete state.leadSeen[k];
+state.lastRun = { at: new Date(now).toISOString(), leads: leads.length, stats };
+const out = [];
+for (let i = 0; i < leads.length; i += 40) out.push({ json: { kind: 'leads', leads: leads.slice(i, i + 40) } });
+if (bad.length) {
+  const text = 'JobRadar lead feeds: these failed 3 runs in a row. Switch them off in settings.json ("boards": { "jobgether": false } or "getro": false) or ask Claude to look:\n\n• ' + bad.join('\n• ');
+  out.push({ json: { kind: 'tg_text', tg: { text: '🩺 ' + text, disable_web_page_preview: true } } });
+  out.push({ json: { kind: 'email', subject: 'JobRadar: a lead feed needs attention', text, html: `<pre style="font-family:inherit;white-space:pre-wrap">${escHtml(text)}</pre>` } });
+}
+return out;

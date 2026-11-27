@@ -65,6 +65,17 @@ function companiesFromSettings(settings) {
   return { companies: out, invalid };
 }
 
+// How often (minutes) the slower boards are checked. Fast company boards and the classic remote feeds: every run.
+function boardEvery(settings) {
+  return Object.assign({ openabroad: 60, trulyremotework: 30, workable_search: 60, jobgether: 60, getro: 180 }, (settings && settings.boardEvery) || {});
+}
+// Where Workable's cross-company search looks: a country (on-site, hybrid and remote there) and/or a region, remote only.
+function workableLocations(settings) {
+  const w = settings && settings.workableSearch;
+  const list = Array.isArray(w) ? w : [{ location: 'Europe', remoteOnly: true }];
+  return list.map((x) => (typeof x === 'string' ? { location: x } : x)).filter((x) => x && x.location);
+}
+
 function buildRequests(settings, env, now, mockBase) {
   const reqs = [];
   const { companies } = companiesFromSettings(settings);
@@ -87,10 +98,25 @@ function buildRequests(settings, env, now, mockBase) {
     for (const q of queries)
       reqs.push({ source: 'himalayas', slug: q, url: `https://himalayas.app/jobs/api/search?q=${encodeURIComponent(q)}&sort=recent`, method: 'GET' });
 
+  // Boards that change less often are checked less often: one 15-minute run in every N minutes (boardEvery overrides).
+  const minuteOfDay = Math.floor(((now || Date.now()) / 60000) % 1440);
+  const due = (name) => { const e = Math.max(15, Number(boardEvery(settings)[name]) || 15); return minuteOfDay % e < 15; };
+  // Open Abroad: remote roles that hire across borders, each tagged with who can apply (feed of one kind of work)
+  if (b.openabroad !== false && due('openabroad'))
+    reqs.push({ source: 'openabroad', url: `https://openabroad.org/work/${encodeURIComponent(cat(b.openabroad, 'sales'))}/feed.json`, method: 'GET' });
+  // TrulyRemoteWork: curated worldwide-remote roles (their documented JSON Feed)
+  if (b.trulyremotework !== false && due('trulyremotework'))
+    reqs.push({ source: 'trulyremotework', url: `https://trulyremotework.com/feed.json?category=${encodeURIComponent(cat(b.trulyremotework, 'sales'))}`, method: 'GET' });
+  // Workable's cross-company search (every Workable career page): full descriptions, one request per query × place
+  if (b.workable_search !== false && due('workable_search'))
+    for (const w of workableLocations(settings))
+      for (const q of queries)
+        reqs.push({ source: 'workable_search', slug: q + '@' + w.location + (w.remoteOnly ? '/remote' : ''),
+          url: `https://jobs.workable.com/api/v1/jobs?query=${encodeURIComponent(q)}&location=${encodeURIComponent(w.location)}${w.remoteOnly ? '&workplace=remote' : ''}`, method: 'GET' });
+
   // Hiring Cafe — no official API. Two options: the community MCP server (free, unofficial) or an Apify task (paid).
   const hc = settings.hiringCafe || {};
   const every = Math.max(15, hc.everyMinutes || 60);
-  const minuteOfDay = Math.floor(((now || Date.now()) / 60000) % 1440);
   if (hc.enabled && minuteOfDay % every < 15) {
     if ((hc.via || 'mcp') === 'mcp') {
       (hc.queries || queries).forEach((q, i) => reqs.push({
@@ -278,6 +304,56 @@ function normalize(req, raw) {
         postedAt: null, url: j.url, applyUrl: j.url, salary: pay,
         description: htmlToText([j.description, j.key_responsibilities, j.skills_knowledge_expertise, j.benefits].filter(Boolean).join('\n')) }));
     }
+  } else if (s === 'openabroad' && data && Array.isArray(data.items)) {
+    // JSON Feed. First paragraph = "Company · Kind of work · Who can apply · Pay"; a quote of the employer's own
+    // words on who can apply follows when they have one. The role page links to the employer's posting.
+    for (const it of data.items) {
+      const html = String(it.content_html || '');
+      const head = htmlToText((html.match(/<p>([\s\S]*?)<\/p>/) || [, it.summary || ''])[1]).split(' · ').map((x) => x.trim());
+      const company = (it.authors && it.authors[0] && it.authors[0].name) || head[0] || '';
+      const title = String(it.title || '').replace(new RegExp('\\s*·\\s*' + company.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*$'), '').trim();
+      const url = String(it.url || it.id || '').replace(/[?&]utm_source=feed$/, '');
+      const body = htmlToText(html.replace(/<p><a [^>]*>Read the role[\s\S]*$/i, ''));
+      out.push(mk({ uid: `openabroad:${it.id || url}`, source: s, sourceLabel: 'Open Abroad', company, title,
+        location: head[2] || '', remote: true, postedAt: toIso(it.date_published), url, applyUrl: url, salary: head[3] || null,
+        description: body + '\n\n(Open Abroad lists remote roles that hire across borders; "who can apply" above is its reading of the employer\'s posting.)' }));
+    }
+  } else if (s === 'trulyremotework' && data && Array.isArray(data.items)) {
+    for (const it of data.items) {
+      const t = it._trw || {};
+      const company = (it.authors && it.authors[0] && it.authors[0].name) || '';
+      const title = String(it.title || '').replace(new RegExp('\\s+at\\s+' + company.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*$'), '').trim();
+      out.push(mk({ uid: `trulyremotework:${it.id || it.url}`, source: s, sourceLabel: 'TrulyRemoteWork', company, title,
+        location: t.location || 'Worldwide', remote: true, postedAt: toIso(it.date_published), url: it.url, applyUrl: it.url,
+        salary: t.salary || null, description: (it.content_text || it.summary || '') + '\n\n(TrulyRemoteWork lists roles it judges open worldwide; check the posting itself.)' }));
+    }
+  } else if (s === 'workable_search' && data && Array.isArray(data.jobs)) {
+    for (const j of data.jobs) {
+      if (j.state && j.state !== 'published') continue;
+      const loc = j.location || {}; const co = j.company || {};
+      out.push(mk({ uid: `workable_search:${j.id}`, source: s, sourceLabel: 'Workable job search', company: co.title || '', title: j.title,
+        location: [loc.city, loc.subregion, loc.countryName].filter((x, i, a) => x && a.indexOf(x) === i).join(', '),
+        remote: j.workplace === 'remote' ? true : null, workplaceType: j.workplace || null, postedAt: toIso(j.created),
+        url: j.url, applyUrl: j.url, description: htmlToText([j.description, j.requirementsSection, j.benefitsSection].filter(Boolean).join('\n')) }));
+    }
+  } else if (s === 'getro_detail' && typeof data === 'string') {
+    // a VC portfolio board's job page: the posting sits in the page's own __NEXT_DATA__ (Getro's API is off-limits by robots.txt)
+    const m = data.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+    let j = null; try { j = JSON.parse(m[1]).props.pageProps.initialState.jobs.currentJob; } catch (e) { j = null; }
+    if (j && j.id && j.title && (j.status || 'active') === 'active' && !j.closedAt && !j.deactivatedAt) {
+      const org = j.organization || {};
+      const locs = (j.locations || []).map((l) => (l && (l.name || l.description)) || l).filter(Boolean);
+      const mode = String(j.workMode || '').toLowerCase();
+      const cents = (v) => (typeof v === 'number' ? Math.round(v / 100) : null);
+      const lo = cents(j.compensationAmountMinCents), hi = cents(j.compensationAmountMaxCents);
+      const apply = (j.applicationMethod === 'url' && j.applicationPath) || j.url || req.url;
+      out.push(mk({ uid: `getro:${j.id}`, source: 'getro', sourceLabel: 'VC portfolio board (' + String(req.url || '').replace(/^https?:\/\/([^/]+).*/, '$1') + ')',
+        company: org.name || req.company, title: j.title, location: locs.join(' / '),
+        remote: /remote/.test(mode) || locs.some((l) => /^\s*(remote|anywhere|worldwide)\b/i.test(l)) ? true : null, workplaceType: mode || null,
+        postedAt: toIso(j.postedAt), url: req.url, applyUrl: apply,
+        salary: lo || hi ? `${j.compensationCurrency || ''} ${[lo, hi].filter(Boolean).join('-')} ${j.compensationPeriod || ''}`.trim() : null,
+        description: htmlToText(j.description || ''), detailFor: req.detailFor }));
+    }
   } else if (s === 'manual' && typeof raw === 'string' && /<html|<body|<title/i.test(raw)) {
     const meta = (prop) => { const m = raw.match(new RegExp('<meta[^>]+(?:property|name)=["\']' + prop + '["\'][^>]*content=["\']([^"\']+)', 'i')) || raw.match(new RegExp('<meta[^>]+content=["\']([^"\']+)["\'][^>]*(?:property|name)=["\']' + prop, 'i')); return m ? htmlToText(m[1]).trim() : ''; };
     const title = meta('og:title') || htmlToText((raw.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [, ''])[1]).trim();
@@ -398,11 +474,84 @@ function parseLinkedInAlert(textPlain, textHtml) {
 }
 
 // A LinkedIn lead as a job of its own: title/company/location only (used when its posting isn't on a public job board)
+// Leads come from LinkedIn alert emails (via "linkedin", the default) or the lead feeds (Jobgether, VC portfolio
+// boards). A lead's key is "<via>:<id>"; LinkedIn keys stay "linkedin:<id>" as before.
+function leadVia(lead) { return (lead && lead.via) || 'linkedin'; }
+function leadKey(lead) { return leadVia(lead) + ':' + lead.id; }
+function leadLabel(via) { return ({ linkedin: 'LinkedIn alert', jobgether: 'Jobgether', getro: 'VC portfolio board' })[via] || via; }
+function lightSources() { return ['linkedin', 'jobgether', 'getro']; }
+
 function lightJob(lead) {
-  return mk({ uid: 'linkedin:' + lead.id, source: 'linkedin', sourceLabel: 'LinkedIn alert', company: lead.company, title: lead.title,
-    location: lead.location || '', remote: /remote/i.test(lead.location || '') ? true : null, postedAt: null, url: lead.url, applyUrl: lead.url,
-    description: '(Only the title, company and location are known: this came from a LinkedIn job alert and the full posting is not available. LinkedIn\'s location is reliable: "City, Country (Remote)" means remote within that country or region, "(Hybrid)"/"(On-site)" means that city. Judge location_eligible from it against the candidate\'s location rules exactly as for a full posting (a city or country the candidate can\'t work in = "no"). Answer "unclear" for language and pay unless obvious, and do not mark the role down for missing detail.)',
-    light: true, leadId: lead.id });
+  const via = leadVia(lead);
+  const tail = ' Judge location_eligible from it against the candidate\'s location rules exactly as for a full posting (a city or country the candidate can\'t work in = "no"). Answer "unclear" for language and pay unless obvious, and do not mark the role down for missing detail.)';
+  const description = via === 'linkedin'
+    ? '(Only the title, company and location are known: this came from a LinkedIn job alert and the full posting is not available. LinkedIn\'s location is reliable: "City, Country (Remote)" means remote within that country or region, "(Hybrid)"/"(On-site)" means that city.' + tail
+    : `(Only what the ${leadLabel(via)} listing says is known; the full posting is not available.${lead.details ? ' Listing: ' + lead.details : ''} Its location field lists where applicants can be.` + tail;
+  return mk({ uid: leadKey(lead), source: via, sourceLabel: leadLabel(via), company: lead.company, title: lead.title,
+    location: lead.location || '', remote: /remote/i.test(lead.location || '') ? true : null, postedAt: toIso(lead.postedAt || null), url: lead.url, applyUrl: lead.url,
+    salary: lead.salary || null, description, light: true, leadId: lead.id, leadKey: leadKey(lead) });
+}
+
+// ---- Lead feeds (workflow 8): listings that name company + title but not the full posting. The radar then looks for
+// the posting on the company's own job board (or, for VC portfolio boards, reads the board's job page).
+function leadFeedRequests(settings, now, mockBase, all) {
+  const b = settings.boards || {};
+  const minuteOfDay = Math.floor(((now || Date.now()) / 60000) % 1440);
+  const every = boardEvery(settings);
+  const due = (name) => { if (all) return true; const e = Math.max(60, Number(every[name]) || 60); return minuteOfDay % e < 60; };
+  const reqs = [];
+  if (b.jobgether !== false && due('jobgether')) {
+    const locs = [].concat(settings.jobgetherLocations || ['europe']);
+    for (const q of settings.boardQueries && settings.boardQueries.length ? settings.boardQueries : ['account executive'])
+      for (const loc of locs)
+        reqs.push({ source: 'jobgether', slug: q + '@' + loc, url: `https://jobgether.com/astroapi/ai/jobs.json?keyword=${encodeURIComponent(q)}&locations=${encodeURIComponent(loc)}&limit=25&page=1&sort=date` });
+  }
+  if (b.getro !== false && due('getro'))
+    for (const host of [].concat(settings.vcBoards || getroBoards())) reqs.push({ source: 'getro', slug: host, url: `https://${host}/sitemap.xml` });
+  if (mockBase) for (const r of reqs) r.url = mockBase + '/src/' + r.source + '/' + encodeURIComponent(r.slug);
+  return reqs;
+}
+// European VC portfolio job boards on Getro (list from jobradar-eu, MIT). Their sitemaps are public and allowed by
+// robots.txt. Techstars and Accel are left out: US-heavy, and their sitemaps are split into indexes.
+function getroBoards() {
+  return ['jobs.pointnine.com', 'careers.atomico.com', 'careers.creandum.com', 'careers.speedinvest.com', 'jobs.earlybird.com',
+    'jobs.mmc.vc', 'jobs.openocean.vc', 'jobs.firstminute.capital', 'jobs.byfounders.vc'];
+}
+function titleFromSlug(s) {
+  const small = new Set(['and', 'of', 'the', 'for', 'in', 'to', 'at', 'with', 'or']);
+  return String(s || '').split('-').filter(Boolean).map((w, i) => {
+    if (/^(ae|sdr|bdr|am|csm|emea|dach|uk|us|eu|usa|smb|saas|ai|gtm|b2b|vp|ii|iii|uki|apac|latam|nordics)$/i.test(w)) return w.toUpperCase();
+    return i && small.has(w) ? w : w.charAt(0).toUpperCase() + w.slice(1);
+  }).join(' ');
+}
+// Jobgether's agents API → leads. Rows carry company, title, where applicants can be, remote type, salary — no description.
+function jobgetherLeads(raw) {
+  const d = parseBody(raw);
+  const out = [];
+  for (const j of (d && d.jobs) || []) {
+    if (!j || !j.id || !j.title || !j.company) continue;
+    const details = [['Work', j.remote], ['Where applicants can be', j.location], ['Experience', j.experience], ['Contract', j.contractType], ['Job functions', (j.jobFunctions || []).join(', ')], ['Salary', j.salaryRange]]
+      .filter(([, v]) => v).map(([k, v]) => `${k}: ${htmlToText(String(v))}.`).join(' ');
+    out.push({ via: 'jobgether', id: String(j.id), title: htmlToText(j.title), company: j.company, location: [j.remote, j.location].filter(Boolean).join(' · '),
+      url: j.url, postedAt: j.postedAt || null, salary: j.salaryRange || null, details });
+  }
+  return out;
+}
+// A Getro board's sitemap → leads (job id, title and company from the URL; lastmod when given). The radar reads each
+// lead's job page for the full posting.
+function getroLeads(raw, host) {
+  const xml = String(raw || '');
+  const out = [];
+  const re = /<url>([\s\S]*?)<\/url>/g; let m;
+  while ((m = re.exec(xml))) {
+    const loc = (m[1].match(/<loc>\s*([^<\s]+)\s*<\/loc>/) || [])[1];
+    const mod = (m[1].match(/<lastmod>\s*([^<\s]+)\s*<\/lastmod>/) || [])[1];
+    const p = loc && loc.match(/^https?:\/\/[^/]+\/companies\/([^/]+)\/jobs\/(\d+)-([^/?#]+)$/);
+    if (!p) continue;
+    out.push({ via: 'getro', id: p[2], title: titleFromSlug(p[3]), company: titleFromSlug(p[1].replace(/-\d+$/, '')), location: '',
+      url: loc, detailUrl: loc, lastmod: mod ? toIso(mod) : null, board: host });
+  }
+  return out;
 }
 
 // Same posting? Titles compared loosely (punctuation, word order, "Sr." vs "Senior").
@@ -436,6 +585,8 @@ function leadRequests(leads, settings, boards, now, mockBase) {
     const n = normName(l.company);
     const own = companies.find((c) => normName(c.name) === n);
     const b = (boards || {})[n];
+    // the listing has a job page of its own we may read (VC portfolio boards): that page is the posting
+    if (l.detailUrl) { reqs.push({ source: leadVia(l) + '_detail', company: l.company, slug: l.id, url: l.detailUrl, method: 'GET', lead: true, detailFor: l.id }); continue; }
     if (own) add({ source: own.ats, company: own.name, slug: own.slug, dream: own.dream, url: atsUrls()[own.ats](own.slug), method: 'GET', lead: true });
     else if (b && b.ats && now - b.at < 30 * 864e5) add({ source: b.ats, company: l.company, slug: b.slug, url: atsUrls()[b.ats](b.slug), method: 'GET', lead: true });
     else if (b && b.none && now - b.at < 7 * 864e5) light.push(l);

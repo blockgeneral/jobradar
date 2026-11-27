@@ -1,0 +1,11 @@
+JobRadar
+Copyright (c) 2026 the JobRadar contributors. Licensed under the MIT License (see LICENSE).
+
+Parts adapted from other open-source projects, under their own licences:
+
+1. jobradar-eu by Piotr Malek (https://github.com/piotr-malek/jobradar-eu), MIT License, Copyright (c) 2026 Piotr Malek
+   - The list of European VC portfolio job boards on Getro and the approach of reading their public sitemaps and
+     job pages (Getro's own API is disallowed by robots.txt) — src/lib/sources.js (getroBoards, getroLeads, getro_detail)
+   - The Jobgether agents API and Workable cross-company search endpoints — src/lib/sources.js
+   - test/fixtures/getro-sitemap.xml and test/fixtures/getro-job.html: recorded public listings from that project's
+     tests, kept only to test the parsers offline. Job postings belong to the employers and boards that published them.

@@ -20,7 +20,7 @@ asks() { local p="$1" v; read -r -s -p "  $p: " v; echo >&2; printf "%s" "$v"; }
 yes()  { local v; read -r -p "  $1 [${2:-y}/$( [ "${2:-y}" = y ] && echo n || echo y)]: " v; v="${v:-${2:-y}}"; [ "$v" = y ] || [ "$v" = Y ]; }
 
 WF_SEND=JobRadarSend0001; WF_RADAR=JobRadarMain0001; WF_BUTTONS=JobRadarActn0001
-WF_MAIL=JobRadarMail0001; WF_REPLIES=JobRadarRepl0001; WF_REPORTS=JobRadarRprt0001; WF_CHAT=JobRadarChat0001; WF_LINKEDIN=JobRadarLnkd0001
+WF_MAIL=JobRadarMail0001; WF_REPLIES=JobRadarRepl0001; WF_REPORTS=JobRadarRprt0001; WF_CHAT=JobRadarChat0001; WF_LINKEDIN=JobRadarLnkd0001; WF_LEADS=JobRadarLead0001
 CHAT_URL=http://localhost:5678/webhook/b7c1a5e0-0c4a-4e1d-9a6b-6a6f62726164/chat
 HOOK="${JOBRADAR_HOOK:-http://127.0.0.1:5678/webhook}"
 API_ANTHROPIC="${ANTHROPIC_BASE_URL:-https://api.anthropic.com}"; API_TG="${TELEGRAM_API_BASE:-https://api.telegram.org}"
@@ -60,12 +60,12 @@ deploy_workflows() {
   # credentials are generated and imported inside one container run — no secrets file on disk
   dc run --rm --no-deps -T --entrypoint sh n8n -c 'node /home/node/jobradar/tools/credentials.js > /tmp/c.json && n8n import:credentials --input=/tmp/c.json' >/dev/null 2>&1 \
     || die "Couldn't save the email settings into n8n. Run ./jobradar logs for details."
-  local ids="$WF_SEND $WF_RADAR $WF_REPORTS $WF_CHAT"
+  local ids="$WF_SEND $WF_RADAR $WF_REPORTS $WF_CHAT $WF_LEADS"
   has_channel telegram && ids="$ids $WF_BUTTONS"
   has_channel email && ids="$ids $WF_MAIL"
   [ "$(node_in -e 'try{console.log(require("/home/node/jobradar/settings.json").replyDetection.enabled?1:0)}catch(e){console.log(0)}')" = 1 ] && has_channel email && ids="$ids $WF_REPLIES"
   [ "$(env_get LINKEDIN_ALERTS)" = on ] && ids="$ids $WF_LINKEDIN"
-  for id in $WF_SEND $WF_RADAR $WF_BUTTONS $WF_MAIL $WF_REPLIES $WF_REPORTS $WF_CHAT $WF_LINKEDIN; do n8n_cli unpublish:workflow --id=$id >/dev/null; done
+  for id in $WF_SEND $WF_RADAR $WF_BUTTONS $WF_MAIL $WF_REPLIES $WF_REPORTS $WF_CHAT $WF_LINKEDIN $WF_LEADS; do n8n_cli unpublish:workflow --id=$id >/dev/null; done
   n8n_cli import:workflow --separate --input=/home/node/jobradar/workflows >/dev/null
   for id in $ids; do n8n_cli publish:workflow --id=$id >/dev/null; done
   ok "workflows installed and switched on ($(echo $ids | wc -w | tr -d ' '))"

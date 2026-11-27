@@ -38,7 +38,7 @@ grep -q "Your CV review" "$S/setup.out" && ok "review shown in the terminal"
 grep -q "kept your own cover letter" "$S/setup.out" && grep -q "rebuilt a checkout over a long weekend" candidate/cover_letter_base.md && grep -q "{{WHY_COMPANY}}" candidate/cover_letter_base.md && ok "own cover letter kept word for word, slots added"
 node -e 'const s=require("./settings.json");const c=JSON.stringify(s.companies);if(!c.includes("supabase")||!c.includes("anthropic")||c.includes("example.com"))process.exit(1)' && ok "companies added from pasted links (bad link refused)"
 grep -q "not a supported job board" "$S/setup.out" && ok "unsupported link explained"
-grep -q "workflows installed and switched on (5)" "$S/setup.out" && ok "5 workflows installed + published (Telegram user, incl. chat)"
+grep -q "workflows installed and switched on (6)" "$S/setup.out" && ok "6 workflows installed + published (Telegram user, incl. chat + lead feeds)"
 for i in $(seq 1 60); do [ -s "$S/mock/telegram_messages.jsonl" ] && grep -q '"ap:' "$S/mock/telegram_messages.jsonl" && break; sleep 2; done
 grep -q '"ap:' "$S/mock/telegram_messages.jsonl" && ok "first-run preview: a job card arrived in Telegram"
 ls output/*/ >/dev/null 2>&1 && ok "job folder written: $(ls output | head -1)"

@@ -6,9 +6,23 @@
     "remotive": true,
     "remoteok": true,
     "jobicy": true,
-    "himalayas": true
+    "himalayas": true,
+    "openabroad": true,
+    "trulyremotework": true,
+    "workable_search": true,
+    "jobgether": true,
+    "getro": true
   },
   "boardQueries": [],
+  "workableSearch": [
+    {
+      "location": "Europe",
+      "remoteOnly": true
+    }
+  ],
+  "jobgetherLocations": [
+    "europe"
+  ],
   "hiringCafe": {
     "enabled": true,
     "via": "mcp",

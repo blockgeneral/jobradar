@@ -81,3 +81,16 @@ curl -s -m 600 -X POST -H 'content-type: application/json' -d '{"leads":[
   "http://127.0.0.1:5690/webhook/jobradar-run" -o /dev/null -w "  webhook jobradar-run {leads} → HTTP %{http_code}\n"
 sleep 2
 node "$ROOT/test/e2e-linkedin-assert.js" "$T"
+
+echo "── lead feeds handed to the radar (as workflow 8 does): a VC-board job page + a Jobgether listing"
+curl -s -m 600 -X POST -H 'content-type: application/json' -d '{"leads":[
+ {"via":"getro","id":"vc-501","title":"Account Executive EMEA","company":"Portfolioco","location":"","url":"https://jobs.pointnine.com/companies/portfolioco/jobs/501-account-executive-emea","detailUrl":"https://jobs.pointnine.com/companies/portfolioco/jobs/501-account-executive-emea"},
+ {"via":"jobgether","id":"jg-1","title":"Account Manager","company":"FeedCo","location":"Full Remote · Europe","url":"https://jobgether.com/offer/jg-1","details":"Work: Full Remote. Where applicants can be: Europe."}]}' \
+  "http://127.0.0.1:5690/webhook/jobradar-run" -o /dev/null -w "  webhook jobradar-run {leads from feeds} → HTTP %{http_code}\n"
+sleep 2
+node "$ROOT/test/e2e-leadfeeds-assert.js" "$T"
+
+echo "── workflow 8 itself: read the lead feeds and hand new listings to the radar"
+JOBRADAR_SELF_URL=http://127.0.0.1:5690 N8N_RUNNERS_BROKER_PORT=5693 run execute --id=JobRadarLead0001 > "$T/lead-exec.log" 2>&1 || true
+sleep 3
+node "$ROOT/test/e2e-leadfeeds-assert.js" "$T" workflow8

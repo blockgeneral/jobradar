@@ -35,6 +35,19 @@ const SRC = {
   remoteok: [{ legal: 'notice' }, { id: '77', epoch: Math.floor(Date.now() / 1000) - 7200, company: 'DataFlowCo', position: 'Account Executive', location: 'Europe', url: 'https://remoteok.com/remote-jobs/77', apply_url: 'https://remoteok.com/l/77', description: 'dup of remotive (same company+title)' }],
   jobicy: { jobs: [] },
   himalayas: { jobs: [] },
+  openabroad: { version: 'https://jsonfeed.org/version/1.1', items: [] },
+  trulyremotework: { version: 'https://jsonfeed.org/version/1.1', items: [] },
+  workable_search: { jobs: [] },
+  // lead feeds (workflow 8): Jobgether's agents API + a VC board's sitemap
+  jobgether: { jobs: [{ id: 'jg-77', title: 'Account Executive, Mid-Market', company: 'SitemapCo', location: 'Europe', remote: 'Full Remote', postedAt: minsAgo(30), url: 'https://jobgether.com/offer/jg-77' },
+    { id: 'jg-78', title: 'Senior Backend Engineer', company: 'SitemapCo', location: 'Europe', remote: 'Full Remote', postedAt: minsAgo(30), url: 'https://jobgether.com/offer/jg-78' }] },
+  getro: { 'jobs.pointnine.com': `<?xml version="1.0"?><urlset><url><loc>https://jobs.pointnine.com/companies/vcfeedco/jobs/777-partnerships-manager-emea</loc><lastmod>${minsAgo(60)}</lastmod></url><url><loc>https://jobs.pointnine.com/companies/vcfeedco/jobs/778-data-engineer</loc><lastmod>${minsAgo(60)}</lastmod></url></urlset>` },
+  // a VC portfolio board's job page (Getro): the posting sits in __NEXT_DATA__
+  getro_detail: { '777': '<html><body><script id="__NEXT_DATA__" type="application/json">' + JSON.stringify({ props: { pageProps: { initialState: { jobs: { currentJob: { id: 777, title: 'Partnerships Manager (EMEA)', status: 'active', postedAt: minsAgo(60), workMode: 'remote', locations: [{ name: 'Remote - Europe' }], organization: { name: 'VCFeedCo' }, url: 'https://vcfeedco.example/jobs/777', description: '<p>Partner channel role for a data company, remote in Europe, English.</p>' } } } } } }) + '</script></body></html>',
+    'vc-501': '<html><body><script id="__NEXT_DATA__" type="application/json">' + JSON.stringify({ props: { pageProps: { initialState: { jobs: { currentJob: {
+    id: 501, title: 'Account Executive (EMEA)', status: 'active', postedAt: minsAgo(90), workMode: 'remote', locations: [{ name: 'Remote' }, { name: 'Vienna, Austria' }], organization: { name: 'PortfolioCo' },
+    url: 'https://jobs.ashbyhq.com/portfolioco/501', applicationMethod: 'url', applicationPath: 'https://jobs.ashbyhq.com/portfolioco/501/application',
+    description: '<p>PortfolioCo builds data pipelines for analytics teams. Full-cycle AE for EMEA, remote in Europe, English.</p>' } } } } } }) + '</script></body></html>' },
   pinpoint: { safetywing: { data: [{ id: 'pp1', title: 'Platform Business Partner', url: 'https://safetywing.pinpointhq.com/en/postings/pp1', workplace_type: 'remote', workplace_type_text: 'Fully remote', location: { name: 'Remote' }, description: '<p>Own platform partnerships for Remote Health. Based UTC+0 to UTC+6. English.</p>', compensation_visible: false }] } },
 };
 const HC_MCP = (id) => 'event: message\ndata: ' + JSON.stringify({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: JSON.stringify({ jobs: [
@@ -44,7 +57,7 @@ let TG_UPDATES = [];
 function mockScore(user) {
   const t = (user.match(/Title: (.*)/) || [])[1] || '';
   const c = (user.match(/Company: (.*)/) || [])[1] || '';
-  const good = /n8n|Anthropic|CafeCo|Supabase|SafetyWing|PetsApp|LeadCo|Mystery/.test(c);
+  const good = /n8n|Anthropic|CafeCo|Supabase|SafetyWing|PetsApp|LeadCo|Mystery|PortfolioCo|FeedCo|SitemapCo/.test(c);
   const mid = /DataFlow/.test(c);
   return {
     location_eligible: /Acme/.test(c) ? 'no' : 'yes', location_reason: /Acme/.test(c) ? 'US residents only' : 'Remote EMEA with EOR',
@@ -103,6 +116,8 @@ http.createServer(async (req, res) => {
       const d = SRC[source];
       if (d === undefined) return send(404, { error: 'unknown source' });
       if (typeof d === 'string') return send(200, d, { 'content-type': 'application/rss+xml' });
+      if (source === 'getro') return d[s] ? send(200, d[s], { 'content-type': 'application/xml' }) : send(404, '<html>no</html>', { 'content-type': 'text/html' });
+      if (source === 'getro_detail') return d[s] ? send(200, d[s], { 'content-type': 'text/html' }) : send(404, '<html>gone</html>', { 'content-type': 'text/html' });
       if (['ashby', 'greenhouse', 'pinpoint'].includes(source)) return d[s] ? send(200, d[s]) : send(404, { error: 'Not Found' });
       return send(200, d);
     }

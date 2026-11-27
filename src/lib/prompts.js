@@ -51,6 +51,8 @@ function scoreTool() { return {
     properties: {
       location_eligible: { type: 'string', enum: ['yes', 'no', 'unclear'], description: 'Can the candidate (based where the profile says) be hired for this role as posted, judged against the location rules in their search profile?' },
       location_reason: { type: 'string' },
+      location_evidence: { type: 'string', description: 'The exact sentence or phrase from the posting text that says where the employer hires (e.g. "Remote within the EU", "must be based in the UK"), copied word for word, under 160 characters. Empty if the posting text never says it (a job board label does not count).' },
+      outbound_share: { type: 'string', enum: ['heavy', 'mixed', 'light', 'unknown'], description: 'How much of the role is self-sourcing new pipeline (cold outreach, prospecting, "build your own pipeline", "hunter", SDR-free outbound). heavy = the posting makes it the core of the job; mixed = expected alongside inbound/assigned accounts; light = inbound, assigned book or expansion-led; unknown = not said. Non-sales roles: unknown.' },
       english_only: { type: 'string', enum: ['yes', 'no', 'unclear'], description: 'no = posting requires fluency in a language other than English.' },
       language_reason: { type: 'string' },
       comp_meets_floor: { type: 'string', enum: ['yes', 'no', 'unknown'], description: 'Compare the stated pay range to the floor in the profile (convert currencies; for commission roles compare OTE if given). unknown if not stated or no floor set.' },
@@ -71,7 +73,7 @@ function scoreTool() { return {
       contact_title: { type: 'string', description: 'Their job title if the posting gives it (e.g. "Head of Sales EMEA"), else empty.' },
       contact_url: { type: 'string', description: 'Their LinkedIn profile URL if the posting includes one (linkedin.com/in/...), else empty. Never construct one.' },
     },
-    required: ['location_eligible', 'english_only', 'comp_meets_floor', 'role_family', 'seniority_fit', 'skills_fit', 'values_fit', 'values_match', 'company_note', 'score', 'why', 'gaps', 'keywords'],
+    required: ['location_eligible', 'location_evidence', 'outbound_share', 'english_only', 'comp_meets_floor', 'role_family', 'seniority_fit', 'skills_fit', 'values_fit', 'values_match', 'company_note', 'score', 'why', 'gaps', 'keywords'],
   },
 }; }
 
@@ -152,4 +154,23 @@ function toolInput(resp) {
   const a = text.indexOf('{'), b = text.lastIndexOf('}');
   if (a >= 0 && b > a) { try { return JSON.parse(text.slice(a, b + 1)); } catch (e) {} }
   return null;
+}
+
+// Extra card lines from the screening: where the employer hires in its own words (or a warning that the posting never
+// says), the RepVue rating you noted for the company (settings.json → companies[].repvue), and an outbound-heavy flag.
+// { lines: shown under the location, checks: added to "Check before sending" }
+function cardSignals(job, fit, settings) {
+  const lines = []; const checks = [];
+  const ev = String(fit.location_evidence || '').trim();
+  if (fit.location_eligible !== 'no') {
+    if (ev) lines.push(`🗺️ Where they hire: “${ev.slice(0, 160)}”`);
+    else lines.push('🗺️ Location unverified: the posting doesn\'t say where they hire' + (job.location ? ` (board says “${String(job.location).slice(0, 50)}”)` : ''));
+  }
+  const c = (((settings || {}).companies) || []).find((x) => x && typeof x === 'object' && x.name && normName(x.name) === normName(job.company));
+  if (c && c.repvue != null && c.repvue !== '') {
+    const r = Number(c.repvue); const min = Number(((settings || {}).scoring || {}).repvueMin || 0);
+    lines.push(`⭐ RepVue ${isNaN(r) ? c.repvue : r.toFixed(1)}${min && !isNaN(r) && r < min ? ` (below your ${min} bar)` : ''}`);
+  }
+  if (fit.outbound_share === 'heavy') checks.push('Outbound-heavy: the posting makes self-sourcing new pipeline the core of the job.');
+  return { lines, checks };
 }

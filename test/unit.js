@@ -3,7 +3,7 @@
 const fs = require('fs'); const path = require('path'); const assert = require('assert');
 const ROOT = path.join(__dirname, '..');
 const libSrc = ['util', 'sources', 'prompts', 'guard', 'notify'].map((n) => fs.readFileSync(path.join(ROOT, 'src/lib', n + '.js'), 'utf8')).join('\n');
-const L = new Function('$env', libSrc + '; return { normalize, watchList, normName, preFilter, checkTailoring, keywordCoverage, toIso, detectAts, companiesFromSettings, buildRequests, parseBody, telegramCard, emailForJob, computeReport, telegramReport, inQuietHours, shortHash, fillCoverLetter, countryLock, claimCheck, contactLinks, resumeDiff, changesDoc, manualRequests, pickManual, relocateCovers, scoreRequest, parseLinkedInAlert, matchLead, lightJob, leadRequests, lightCard };')({ NOTIFY_CHANNELS: 'telegram,email' });
+const L = new Function('$env', libSrc + '; return { normalize, watchList, normName, preFilter, checkTailoring, keywordCoverage, toIso, detectAts, companiesFromSettings, buildRequests, parseBody, telegramCard, emailForJob, computeReport, telegramReport, inQuietHours, shortHash, fillCoverLetter, countryLock, claimCheck, contactLinks, resumeDiff, changesDoc, manualRequests, pickManual, relocateCovers, scoreRequest, parseLinkedInAlert, matchLead, lightJob, leadRequests, lightCard, leadFeedRequests, jobgetherLeads, getroLeads, titleFromSlug, cardSignals, leadKey };')({ NOTIFY_CHANNELS: 'telegram,email' });
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('  ✔ ' + name); };
 const now = Date.now();
 
@@ -64,6 +64,83 @@ async function runNode(code, { input = [], nodes = {}, env = {}, state = {}, ite
     const atTop = new Date('2026-11-21T10:05:00Z').getTime(), mid = new Date('2026-11-21T10:35:00Z').getTime();
     assert.equal(L.buildRequests(s2, {}, atTop).filter((r) => r.source === 'hiringcafe_mcp' && r.method === 'POST').length, 2);
     assert.equal(L.buildRequests(s2, {}, mid).filter((r) => r.source === 'hiringcafe_mcp').length, 0);
+  });
+
+  console.log('new sources (Nov 2026)');
+  const FX = (f) => fs.readFileSync(path.join(ROOT, 'test/fixtures', f), 'utf8');
+  t('board requests: new boards on their own intervals, switchable off', () => {
+    const s3 = { boardQueries: ['account executive', 'account manager'], workableSearch: [{ location: 'Austria' }, { location: 'Europe', remoteOnly: true }] };
+    const top = new Date('2026-11-27T10:00:00Z').getTime(), q = new Date('2026-11-27T10:15:00Z').getTime(), half = new Date('2026-11-27T10:30:00Z').getTime();
+    const at = (t0, src, set) => L.buildRequests(set || s3, {}, t0).filter((r) => r.source === src);
+    assert.equal(at(top, 'openabroad')[0].url, 'https://openabroad.org/work/sales/feed.json');
+    assert.equal(at(q, 'openabroad').length, 0); // hourly
+    assert.equal(at(half, 'trulyremotework')[0].url, 'https://trulyremotework.com/feed.json?category=sales'); // every 30 min
+    const w = at(top, 'workable_search');
+    assert.equal(w.length, 4); assert.ok(w.some((r) => /location=Europe&workplace=remote/.test(r.url) && /query=account%20manager/.test(r.url)));
+    assert.ok(w.some((r) => /location=Austria$/.test(r.url)));
+    assert.equal(at(top, 'openabroad', Object.assign({}, s3, { boards: { openabroad: false } })).length, 0);
+    assert.equal(at(q, 'openabroad', Object.assign({}, s3, { boardEvery: { openabroad: 15 } })).length, 1);
+  });
+  t('Open Abroad feed → jobs (who can apply → location, pay → salary)', () => {
+    const feed = { version: 'https://jsonfeed.org/version/1.1', items: [{ id: 'https://openabroad.org/role/8cec7eb119/', url: 'https://openabroad.org/role/8cec7eb119/?utm_source=feed', title: 'Sales Manager · BlueVPS OÜ', summary: 'x',
+      content_html: '<p>BlueVPS OÜ · Sales · People anywhere in the world · $3,000 a month</p><p>We want a Sales Manager to grow our base.</p><p>Who can apply, in the employer’s words:</p><blockquote>Work from anywhere.</blockquote><p><a href="https://openabroad.org/role/8cec7eb119/?utm_source=feed">Read the role and open the posting</a> · <a href="https://openabroad.org/alerts/?utm_source=feed">Get new roles by email</a></p>',
+      date_published: '2026-11-26T00:00:00Z', authors: [{ name: 'BlueVPS OÜ' }], tags: ['Sales'] }] };
+    const j = L.normalize({ source: 'openabroad' }, JSON.stringify(feed))[0];
+    assert.equal(j.title, 'Sales Manager'); assert.equal(j.company, 'BlueVPS OÜ'); assert.equal(j.location, 'People anywhere in the world'); assert.equal(j.salary, '$3,000 a month');
+    assert.equal(j.url, 'https://openabroad.org/role/8cec7eb119/'); assert.ok(/Work from anywhere/.test(j.description) && !/Get new roles/.test(j.description)); assert.equal(j.postedAt, '2026-11-26T00:00:00.000Z');
+  });
+  t('TrulyRemoteWork feed → jobs (title without " at Company")', () => {
+    const feed = { items: [{ id: 'https://trulyremotework.com/jobs/ae-huzzle', url: 'https://trulyremotework.com/jobs/ae-huzzle', title: 'Account Executive - Remote at Huzzle', content_text: 'Sell to SMBs.', date_published: '2026-11-27T03:00:01.000Z', authors: [{ name: 'Huzzle' }], tags: ['Sales'], _trw: { location: 'Worldwide', salary: '$60,000—$80,000' } }] };
+    const j = L.normalize({ source: 'trulyremotework' }, JSON.stringify(feed))[0];
+    assert.equal(j.title, 'Account Executive - Remote'); assert.equal(j.company, 'Huzzle'); assert.equal(j.location, 'Worldwide'); assert.equal(j.salary, '$60,000—$80,000'); assert.equal(j.remote, true);
+  });
+  t('Workable cross-company search → jobs with full text', () => {
+    const d = { jobs: [{ id: 'ade3', title: 'EMEA Account Executive', state: 'published', company: { title: 'RHONDOS Inc' }, location: { city: '', subregion: null, countryName: 'Austria' }, workplace: 'remote', created: '2026-11-20T22:09:36.531Z', url: 'https://jobs.workable.com/view/x/emea-ae', description: '<p>Own EMEA</p>', requirementsSection: '<ul><li>5 years SaaS</li></ul>', benefitsSection: '' },
+      { id: 'old', title: 'Closed', state: 'archived', company: { title: 'X' }, location: {} }] };
+    const j = L.normalize({ source: 'workable_search' }, JSON.stringify(d));
+    assert.equal(j.length, 1); assert.equal(j[0].company, 'RHONDOS Inc'); assert.equal(j[0].location, 'Austria'); assert.equal(j[0].remote, true); assert.ok(/5 years SaaS/.test(j[0].description));
+  });
+  t('lead feeds: Jobgether hourly, VC boards every 3 hours, both switchable off', () => {
+    const s4 = { boardQueries: ['account executive'], jobgetherLocations: ['austria', 'europe'] };
+    const t0 = new Date('2026-11-27T09:00:00Z').getTime(), t1 = new Date('2026-11-27T10:00:00Z').getTime();
+    const r0 = L.leadFeedRequests(s4, t0, ''), r1 = L.leadFeedRequests(s4, t1, '');
+    assert.equal(r0.filter((r) => r.source === 'jobgether').length, 2); assert.equal(r0.filter((r) => r.source === 'getro').length, 9);
+    assert.equal(r1.filter((r) => r.source === 'getro').length, 0); assert.equal(r1.filter((r) => r.source === 'jobgether').length, 2);
+    assert.ok(/locations=austria&limit=25&page=1&sort=date/.test(r0[0].url));
+    assert.equal(L.leadFeedRequests(Object.assign({ boards: { jobgether: false, getro: false } }, s4), t0, '').length, 0);
+  });
+  t('Jobgether rows → leads with the listing\'s own details', () => {
+    const l = L.jobgetherLeads(JSON.stringify({ jobs: [{ company: 'Deel', contractType: 'Full time', experience: 'Senior (5-10 years)', id: '6b08', jobFunctions: ['Account Executive'], location: 'EMEA', postedAt: '2026-11-27T01:31:00.758Z', remote: 'Full Remote', salaryRange: '95000-143000 USD', title: 'Account Executive, SMB | Nordics', url: 'https://jobgether.com/offer/6b08-ae' }, { id: 'x' }] }));
+    assert.equal(l.length, 1); assert.equal(l[0].via, 'jobgether'); assert.equal(l[0].location, 'Full Remote · EMEA'); assert.ok(/Salary: 95000-143000 USD/.test(l[0].details));
+    const j = L.lightJob(l[0]);
+    assert.equal(j.uid, 'jobgether:6b08'); assert.equal(j.source, 'jobgether'); assert.ok(/Jobgether listing says/.test(j.description) && /Where applicants can be: EMEA/.test(j.description)); assert.equal(j.salary, '95000-143000 USD');
+    assert.equal(L.leadKey({ id: '9' }), 'linkedin:9'); // LinkedIn keys unchanged
+  });
+  t('VC portfolio sitemap → leads; job page → full posting', () => {
+    const leads = L.getroLeads(FX('getro-sitemap.xml'), 'jobs.pointnine.com');
+    assert.ok(leads.length >= 5); const c = leads.find((x) => x.id === '96377579');
+    assert.equal(c.title, 'Senior Data Engineer'); assert.equal(c.company, 'Clio'); assert.equal(c.detailUrl, 'https://jobs.pointnine.com/companies/clio/jobs/96377579-senior-data-engineer'); assert.ok(c.lastmod);
+    assert.equal(leads.find((x) => x.id === '97433732').company, 'Amenitiz'); // "-2" suffix stripped
+    assert.equal(L.titleFromSlug('account-executive-emea-and-dach'), 'Account Executive EMEA and DACH');
+    const { reqs } = L.leadRequests([c], {}, {}, now, '');
+    assert.deepEqual(reqs.map((r) => [r.source, r.detailFor, r.url]), [['getro_detail', '96377579', c.detailUrl]]);
+    const j = L.normalize(reqs[0], FX('getro-job.html'))[0];
+    assert.equal(j.uid, 'getro:96377579'); assert.equal(j.company, 'Clio'); assert.equal(j.detailFor, '96377579'); assert.ok(/Remote/.test(j.location) && j.remote === true);
+    assert.ok(/CAD 157300-212800 year/.test(j.salary), j.salary); assert.ok(j.description.length > 200); assert.ok(/pointnine/.test(j.sourceLabel));
+  });
+  t('screening adds where-they-hire evidence and an outbound flag; RepVue shows from settings', () => {
+    const sch = L.scoreRequest({ company: 'A', title: 'AE', description: 'x', sourceLabel: 's' }, 'p', 'r').output_config.format.schema;
+    assert.ok(sch.properties.location_evidence && sch.properties.outbound_share && sch.required.includes('outbound_share'));
+    const set = { companies: [{ name: 'n8n', url: 'https://jobs.ashbyhq.com/n8n', repvue: 4.5 }, { name: 'Coveo', repvue: 3.4 }], scoring: { repvueMin: 4 } };
+    let s = L.cardSignals({ company: 'n8n', location: 'Remote' }, { location_eligible: 'yes', location_evidence: 'Remote within EMEA', outbound_share: 'light' }, set);
+    assert.deepEqual(s.lines, ['🗺️ Where they hire: “Remote within EMEA”', '⭐ RepVue 4.5']); assert.equal(s.checks.length, 0);
+    s = L.cardSignals({ company: 'Coveo', location: 'Anywhere' }, { location_eligible: 'unclear', location_evidence: '', outbound_share: 'heavy' }, set);
+    assert.ok(/Location unverified/.test(s.lines[0]) && /Anywhere/.test(s.lines[0])); assert.equal(s.lines[1], '⭐ RepVue 3.4 (below your 4 bar)'); assert.ok(/Outbound-heavy/.test(s.checks[0]));
+    s = L.cardSignals({ company: 'X' }, { location_eligible: 'no' }, {}); assert.equal(s.lines.length, 0);
+    const card = L.telegramCard({ job: { title: 'AE', company: 'n8n', location: 'Remote', url: 'u', applyUrl: 'u', uid: 'a' }, fit: { score: 80, signal_lines: ['🗺️ Where they hire: “Remote within EMEA”'] }, jrId: 'JR-1' }, {});
+    assert.ok(/Where they hire/.test(card.text));
+    const lc = L.lightCard({ job: Object.assign(L.lightJob({ via: 'jobgether', id: '1', title: 'AE', company: 'Deel', location: 'EMEA', url: 'https://jobgether.com/offer/1' }), {}), fit: { score: 70 }, jrId: 'JR-2' }, {});
+    assert.equal(lc.reply_markup.inline_keyboard[0][0].text, '🔗 Open on Jobgether'); assert.ok(/From Jobgether/.test(lc.text));
   });
 
   console.log('filters & guardrails');
@@ -534,6 +611,47 @@ Unsubscribe: https://www.linkedin.com/comm/psettings/email-unsubscribe?x`;
     const j = L.normalize({ source: 'manual', url: 'https://acme.example/jobs/1', manualUrl: 'https://acme.example/jobs/1' }, html)[0];
     assert.equal(j.company, 'Acme'); assert.ok(/Account Executive/.test(j.title)); assert.ok(/mid-market/.test(j.description) && !/menu|x\(\)/.test(j.description));
   });
+
+  console.log('lead feeds → radar');
+  {
+    const D2 = 864e5;
+    const set5 = { filters: { titleInclude: ['account exec', 'account manag', 'partner'], titleExclude: ['engineer'] }, boardQueries: ['account executive'] };
+    const sitemap = `<urlset><url><loc>https://jobs.pointnine.com/companies/acme/jobs/111-account-executive-dach</loc><lastmod>${new Date(now - 3600e3).toISOString()}</lastmod></url>`
+      + `<url><loc>https://jobs.pointnine.com/companies/acme/jobs/112-senior-data-engineer</loc><lastmod>${new Date(now - 3600e3).toISOString()}</lastmod></url>`
+      + `<url><loc>https://jobs.pointnine.com/companies/beta/jobs/113-account-manager</loc><lastmod>${new Date(now - 5 * D2).toISOString()}</lastmod></url></urlset>`;
+    const jg = JSON.stringify({ jobs: [{ id: 'j1', title: 'Account Executive, SMB', company: 'Deel', location: 'EMEA', remote: 'Full Remote', postedAt: new Date(now - 3600e3).toISOString(), url: 'https://jobgether.com/offer/j1' }] });
+    const planL = [{ source: 'jobgether', slug: 'account executive@europe', _settings: set5 }, { source: 'getro', slug: 'jobs.pointnine.com' }];
+    const st = {};
+    let o = await runNode(OTH.lead_parse, { input: [{ data: jg }, { data: sitemap }], state: st, nodes: { '📋 Plan lead feeds': planL } });
+    t('🧲 first read of a feed: only fresh, relevant listings go to the radar', () => {
+      assert.equal(o.length, 1); assert.deepEqual(o[0].json.leads.map((l) => l.via + ':' + l.id).sort(), ['getro:111', 'jobgether:j1']);
+      assert.ok(st.leadSeen['getro:113'] && !st.leadSeen['getro:112']); // seen (old, not sent) vs filtered by title
+    });
+    const sitemap2 = sitemap.replace('</urlset>', `<url><loc>https://jobs.pointnine.com/companies/gamma/jobs/114-partnerships-manager</loc><lastmod>${new Date(now - 20 * D2).toISOString()}</lastmod></url><url><loc>https://jobs.pointnine.com/companies/delta/jobs/115-account-executive</loc><lastmod>${new Date(now - 6 * D2).toISOString()}</lastmod></url></urlset>`);
+    o = await runNode(OTH.lead_parse, { input: [{ data: jg }, { data: sitemap2 }], state: st, nodes: { '📋 Plan lead feeds': planL } });
+    t('🧲 later reads: only listings never handed over before (long-open roles skipped)', () => { assert.equal(o.length, 1); assert.deepEqual(o[0].json.leads.map((l) => l.id), ['115']); });
+    for (let i = 0; i < 3; i++) o = await runNode(OTH.lead_parse, { input: [{ error: { message: '503' } }, { data: '<urlset></urlset>' }], state: st, nodes: { '📋 Plan lead feeds': planL } });
+    t('🧲 a feed broken 3 runs in a row → one alert', () => { assert.equal(o.filter((x) => x.json.kind === 'tg_text').length, 1); assert.ok(/jobgether/.test(o[0].json.tg.text) && /getro/.test(o[0].json.tg.text)); });
+
+    // radar lead mode: a VC-board lead is read from its job page; a Jobgether lead falls back to title-only
+    const leads5 = [{ via: 'getro', id: '96377579', title: 'Senior Data Engineer', company: 'Clio', location: '', url: 'https://jobs.pointnine.com/companies/clio/jobs/96377579-senior-data-engineer', detailUrl: 'https://jobs.pointnine.com/companies/clio/jobs/96377579-senior-data-engineer' },
+      { via: 'jobgether', id: 'j1', title: 'Account Executive, SMB', company: 'Deel', location: 'Full Remote · EMEA', url: 'https://jobgether.com/offer/j1', details: 'Work: Full Remote.' },
+      { via: 'getro', id: '999', title: 'Account Executive', company: 'Gone', location: '', url: 'https://jobs.pointnine.com/companies/gone/jobs/999-ae', detailUrl: 'https://jobs.pointnine.com/companies/gone/jobs/999-ae' }];
+    const cand5 = { files: { 'search_profile.md': 'p', 'resume_base.md': '# Sam\n' }, settings: { filters: {}, scoring: {} }, manualUrl: '', leads: leads5 };
+    const plan5 = [{ source: 'getro_detail', company: 'Clio', slug: '96377579', url: leads5[0].detailUrl, lead: true, detailFor: '96377579', _candidate: cand5 },
+      { source: 'ashby', company: 'Deel', slug: 'deel', guess: 'deel', lead: true }, { source: 'getro_detail', company: 'Gone', slug: '999', url: leads5[2].detailUrl, lead: true, detailFor: '999' }];
+    const st5 = { initialized: true, seen: {}, judgedBefore: now - 30 * D2 };
+    o = await runNode(RAD.normalize, { input: [], state: st5, nodes: { '⚙️ Plan run': plan5, '🌐 Fetch job sources': [{ data: FX('getro-job.html') }, { data: JSON.stringify({ jobs: [] }) }, { data: '<html>404</html>' }], '🗃️ Already sent': [] } });
+    t('🧲 radar: VC-board lead → full posting from its page; Jobgether lead → title-only; closed page → dropped', () => {
+      const jobs = o.map((x) => x.json.job);
+      assert.deepEqual(jobs.map((j) => j.uid).sort(), ['getro:96377579', 'jobgether:j1']);
+      assert.ok(jobs.find((j) => j.uid === 'getro:96377579').description.length > 200);
+      assert.ok(jobs.find((j) => j.uid === 'jobgether:j1').light);
+      assert.ok(st5.seen['getro:96377579'] && st5.seen['jobgether:j1']); assert.equal(st5.lastRun, undefined);
+    });
+    o = await runNode(RAD.normalize, { input: [], state: st5, nodes: { '⚙️ Plan run': plan5, '🌐 Fetch job sources': [{ data: FX('getro-job.html') }, { data: JSON.stringify({ jobs: [] }) }, { data: '' }], '🗃️ Already sent': [{ uid: 'jobgether:j1', alt_key: 'x', source: 'jobgether', folder: '' }] } });
+    t('🧲 radar: the same leads again → nothing new', () => assert.equal(o.length, 0));
+  }
 }
 console.log(`\nunit OK (${n} checks)`);
 })().catch((e) => { console.error(e); process.exit(1); });

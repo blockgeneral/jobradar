@@ -142,7 +142,7 @@ Plain English, short. The screener reads it for every job, so keep it under 300 
 Give a JSON snippet to merge into JobRadar's `settings.json`:
 - `companies`: careers-page links, `{ "url": "...", "dream": true }` for dream companies, or `{ "name": "...", "dream": true }` to watch a company by name on every job board when its own careers page isn't supported.
 - `boardQueries`: 2–4 search phrases for their role.
-- `boards`: the right categories for their field (We Work Remotely category slug, Remotive category, RemoteOK tag).
+- `boards`: the right categories for their field (We Work Remotely category slug, Remotive category, RemoteOK tag, Open Abroad kind of work, TrulyRemoteWork category). `workableSearch` / `jobgetherLocations`: their country and/or region.
 - `filters.titleInclude` / `titleExclude` / `titleIncludeDream` / `titleExcludeDream`: lowercase regex fragments for job titles to keep or drop. `languageExclude`: phrases that mean a language they don't speak is required.
 - `guardrails.neverClaim`: `[{ "pattern": "<regex>", "message": "<why>" }]` from the never-claim list.
 
